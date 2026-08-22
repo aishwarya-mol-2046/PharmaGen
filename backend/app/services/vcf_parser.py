@@ -1,14 +1,24 @@
+from __future__ import annotations
+
+import re
 import sqlite3
 from pathlib import Path
 from typing import Any
 
 DB_PATH = str(Path(__file__).resolve().parents[2] / "data" / "raw" / "clinical_kb.db")
 
+AA3_TO_AA1 = {
+    "ALA": "A", "ARG": "R", "ASN": "N", "ASP": "D", "CYS": "C", "GLN": "Q", "GLU": "E",
+    "GLY": "G", "HIS": "H", "ILE": "I", "LEU": "L", "LYS": "K", "MET": "M", "PHE": "F",
+    "PRO": "P", "SER": "S", "THR": "T", "TRP": "W", "TYR": "Y", "VAL": "V", "TER": "*",
+    "SEC": "U", "PYL": "O",
+}
+
 HGVS_MAP = {
-    "Ala": "A", "Arg": "R", "Asn": "N", "Asp": "D", "Cys": "C", 
-    "Glu": "E", "Gln": "Q", "Gly": "G", "His": "H", "Ile": "I", 
-    "Leu": "L", "Lys": "K", "Met": "M", "Phe": "F", "Pro": "P", 
-    "Ser": "S", "Thr": "T", "Trp": "W", "Tyr": "Y", "Val": "V"
+    "Ala": "A", "Arg": "R", "Asn": "N", "Asp": "D", "Cys": "C",
+    "Glu": "E", "Gln": "Q", "Gly": "G", "His": "H", "Ile": "I",
+    "Leu": "L", "Lys": "K", "Met": "M", "Phe": "F", "Pro": "P",
+    "Ser": "S", "Thr": "T", "Trp": "W", "Tyr": "Y", "Val": "V",
 }
 
 RSID_MAP = {
@@ -17,6 +27,112 @@ RSID_MAP = {
     "rs9923231": ("VKORC1", "Warfarin"),
     "rs121913333": ("BRAF", "V600E"),
 }
+
+VIP_PGX_MAPPING = {
+    ("CYP2C19", "RS4244285"): "*2",
+    ("CYP2C19", "RS4986893"): "*3",
+    ("CYP2C19", "RS12248560"): "*17",
+    ("CYP2C19", "*2"): "RS4244285",
+    ("CYP2C19", "*3"): "RS4986893",
+    ("CYP2C19", "*17"): "RS12248560",
+    ("CYP2D6", "RS3892097"): "*4",
+    ("CYP2D6", "RS1065852"): "*10",
+    ("CYP2D6", "RS5030655"): "*6",
+    ("CYP2D6", "*4"): "RS3892097",
+    ("CYP2D6", "*10"): "RS1065852",
+    ("CYP2D6", "*6"): "RS5030655",
+    ("CYP2C9", "RS1799853"): "*2",
+    ("CYP2C9", "RS1057910"): "*3",
+    ("CYP2C9", "*2"): "RS1799853",
+    ("CYP2C9", "*3"): "RS1057910",
+    ("DPYD", "RS3918290"): "*2A",
+    ("DPYD", "RS55886062"): "*13",
+    ("DPYD", "RS67376798"): "C.2846A>T",
+    ("DPYD", "*2A"): "RS3918290",
+    ("DPYD", "C.1905+1G>A"): "RS3918290",
+    ("VKORC1", "RS9923231"): "-1639G>A",
+    ("VKORC1", "-1639G>A"): "RS9923231",
+    ("TPMT", "RS1800462"): "*3A",
+    ("TPMT", "RS1800460"): "*3C",
+    ("TPMT", "RS1142345"): "*3C",
+    ("TPMT", "*3A"): "RS1800462",
+    ("TPMT", "*3C"): "RS1800460",
+    ("SLCO1B1", "RS4149056"): "*5",
+    ("SLCO1B1", "*5"): "RS4149056",
+    ("HLA-B", "*57:01"): "HLA-B*57:01",
+    ("HLA-B", "*15:02"): "HLA-B*15:02",
+    ("UGT1A1", "RS8175347"): "*28",
+    ("UGT1A1", "*28"): "RS8175347",
+}
+
+VIP_PGX_PHENOTYPE_MAPPING = {
+    ("CYP2C19", "*2"): ["POOR METABOLIZER", "INTERMEDIATE METABOLIZER", "CYP2C19 POOR METABOLIZER", "CYP2C19 INTERMEDIATE METABOLIZER"],
+    ("CYP2C19", "*3"): ["POOR METABOLIZER", "INTERMEDIATE METABOLIZER", "CYP2C19 POOR METABOLIZER", "CYP2C19 INTERMEDIATE METABOLIZER"],
+    ("CYP2C19", "RS4244285"): ["POOR METABOLIZER", "INTERMEDIATE METABOLIZER", "CYP2C19 POOR METABOLIZER"],
+    ("CYP2C19", "RS4986893"): ["POOR METABOLIZER", "INTERMEDIATE METABOLIZER", "CYP2C19 POOR METABOLIZER"],
+    ("CYP2D6", "*4"): ["POOR METABOLIZER", "INTERMEDIATE METABOLIZER", "CYP2D6 POOR METABOLIZER"],
+    ("CYP2D6", "RS3892097"): ["POOR METABOLIZER", "INTERMEDIATE METABOLIZER", "CYP2D6 POOR METABOLIZER"],
+    ("CYP2C9", "*2"): ["POOR METABOLIZER", "INTERMEDIATE METABOLIZER", "CYP2C9 INTERMEDIATE METABOLIZER"],
+    ("CYP2C9", "*3"): ["POOR METABOLIZER", "INTERMEDIATE METABOLIZER", "CYP2C9 POOR METABOLIZER"],
+    ("DPYD", "*2A"): ["POOR METABOLIZER", "INTERMEDIATE METABOLIZER", "DPD DEFICIENT", "DPD DEFICIENCY"],
+    ("DPYD", "RS3918290"): ["POOR METABOLIZER", "INTERMEDIATE METABOLIZER", "DPD DEFICIENT", "DPD DEFICIENCY"],
+    ("TPMT", "*3A"): ["POOR METABOLIZER", "INTERMEDIATE METABOLIZER", "TPMT DEFICIENT"],
+    ("TPMT", "RS1800462"): ["POOR METABOLIZER", "INTERMEDIATE METABOLIZER", "TPMT DEFICIENT"],
+    ("SLCO1B1", "*5"): ["DECREASED FUNCTION", "POOR FUNCTION", "INTERMEDIATE FUNCTION"],
+    ("SLCO1B1", "RS4149056"): ["DECREASED FUNCTION", "POOR FUNCTION", "INTERMEDIATE FUNCTION"],
+    ("HLA-B", "*57:01"): ["*57:01 POSITIVE", "HLA-B*57:01 POSITIVE", "*57:01", "HLA-B*57:01"],
+    ("HLA-B", "*58:01"): ["*58:01 POSITIVE", "HLA-B*58:01 POSITIVE", "*58:01", "HLA-B*58:01"],
+    ("HLA-B", "*15:02"): ["*15:02 POSITIVE", "HLA-B*15:02 POSITIVE", "*15:02", "HLA-B*15:02"],
+}
+
+
+def normalize_mutation(raw_mut: str) -> str:
+    """Normalize raw mutation strings into standardized notation."""
+    if not raw_mut:
+        return ""
+    m = str(raw_mut).strip()
+    if ":" in m and "::" not in m:
+        m = m.split(":", 1)[-1].strip()
+    if m.upper().startswith("P.") or m.upper().startswith("C."):
+        m = m[2:].strip()
+
+    match = re.match(r"^([A-Za-z]{3})(\d+)([A-Za-z]{3}|\*|=|del|ins|fs.*)?$", m, re.IGNORECASE)
+    if match:
+        a1, pos, a2 = match.groups()
+        a1_1 = AA3_TO_AA1.get(a1.upper(), a1.upper())
+        a2_1 = AA3_TO_AA1.get((a2 or "").upper(), (a2 or "").upper())
+        return f"{a1_1}{pos}{a2_1}"
+
+    # Secondary 3-letter replace fallback
+    for three_let, one_let in HGVS_MAP.items():
+        if three_let in m:
+            m = m.replace(three_let, one_let)
+
+    return m.upper()
+
+
+def parse_csq_or_ann(info_dict: dict) -> tuple[str | None, str | None]:
+    """Extract gene symbol and protein mutation from VEP (CSQ) or SnpEff (ANN) fields."""
+    gene, mut = None, None
+    if "CSQ" in info_dict:
+        csq_first = info_dict["CSQ"].split(",")[0]
+        csq_parts = csq_first.split("|")
+        if len(csq_parts) >= 4 and csq_parts[3]:
+            gene = csq_parts[3].strip()
+        for part in csq_parts:
+            if "p." in part.lower():
+                mut = part.strip()
+                break
+    elif "ANN" in info_dict:
+        ann_first = info_dict["ANN"].split(",")[0]
+        ann_parts = ann_first.split("|")
+        if len(ann_parts) >= 4 and ann_parts[3]:
+            gene = ann_parts[3].strip()
+        for part in ann_parts:
+            if "p." in part.lower():
+                mut = part.strip()
+                break
+    return gene, mut
 
 
 class VariantAnnotationEngine:
@@ -37,6 +153,8 @@ class VariantAnnotationEngine:
             "annotation_coverage_percent": 0.0,
         }
         seen_variants = set()
+        distinct_combinations = set()
+        observed_samples = set()
 
         for line in file_bytes.decode("utf-8", errors="ignore").splitlines():
             stripped_line = line.strip()
@@ -64,68 +182,50 @@ class VariantAnnotationEngine:
                     k, v = item.split("=", 1)
                     info_dict[k.upper()] = v.strip()
 
-            # 1) Custom PharmaGen keys
-            gene = info_dict.get("GENE") or info_dict.get("SYMBOL") or "UNKNOWN"
-            mutation = info_dict.get("MUT") or info_dict.get("HGVSP")
+            csq_gene, csq_mut = parse_csq_or_ann(info_dict)
+            gene = info_dict.get("GENE") or info_dict.get("SYMBOL") or csq_gene or "UNKNOWN"
 
-            # 2) SnpEff ANN= field: ANN=allele|effect|impact|gene|...|hgvs_c|hgvs_p
-            if not mutation and "ANN" in info_dict:
-                ann_fields = info_dict["ANN"].split("|")
-                if len(ann_fields) >= 4 and ann_fields[3]:
-                    gene = ann_fields[3]
-                if len(ann_fields) >= 11 and ann_fields[10]:
-                    mutation = ann_fields[10]
-
-            # 3) VEP CSQ= field
-            if not mutation and "CSQ" in info_dict:
-                csq_fields = info_dict["CSQ"].split("|")
-                if len(csq_fields) >= 4 and csq_fields[3]:
-                    gene = csq_fields[3]
-                if len(csq_fields) >= 11 and csq_fields[10]:
-                    mutation = csq_fields[10]
-
-            # Use rsID mapping if var_id is an rsID and we don't have a good mutation yet
-            if var_id.startswith("rs") and var_id in RSID_MAP:
+            # Check rsID mapping fallback
+            if var_id.lower().startswith("rs") and var_id in RSID_MAP:
                 r_gene, r_mut = RSID_MAP[var_id]
-                gene = r_gene
-                mutation = r_mut
+                if gene == "UNKNOWN":
+                    gene = r_gene
+                raw_mut = r_mut
+            else:
+                raw_mut = (
+                    info_dict.get("MUT")
+                    or info_dict.get("MUTATION")
+                    or info_dict.get("HGVSP")
+                    or info_dict.get("HGVS_P")
+                    or csq_mut
+                    or (var_id.strip() if var_id and var_id.strip() != "." and var_id.strip().lower().startswith("rs") else None)
+                    or f"{ref}>{alt}"
+                )
 
-
-            # 4) Fallback
-            if not mutation:
-                mutation = f"{ref}>{alt}"
-
-            # Normalize HGVSp-like prefix so p.V600E matches V600E in KB
-            mut_norm = mutation.strip()
-            
-            # Transcript prefix stripping (e.g. ENSP00000288602:p.Val600Glu)
-            if ":" in mut_norm:
-                mut_norm = mut_norm.split(":", 1)[-1]
-                
-            if mut_norm.upper().startswith("P.") or mut_norm.upper().startswith("C."):
-                mut_norm = mut_norm[2:]
-            
-            # 3-Letter to 1-Letter translation
-            for three_let, one_let in HGVS_MAP.items():
-                if three_let in mut_norm:
-                    mut_norm = mut_norm.replace(three_let, one_let)
-                    
-            mutation = mut_norm
-
-            variant_key = (chrom, pos, ref, alt, gene.upper(), mutation.upper())
-            if variant_key in seen_variants:
-                validation["duplicate_rows"] += 1
-            seen_variants.add(variant_key)
+            mutation = normalize_mutation(raw_mut)
 
             if gene != "UNKNOWN":
                 validation["gene_annotated_rows"] += 1
-            # Count mutation annotation if it came from an annotation field (not fallback)
-            if any(k in info_dict for k in ("MUT", "HGVSP", "ANN", "CSQ")):
+            if any(k in info_dict for k in ("MUT", "HGVSP", "MUTATION", "ANN", "CSQ")) or (var_id and var_id.lower().startswith("rs")):
                 validation["mutation_annotated_rows"] += 1
 
-            variants.append(
-                {"chrom": chrom, "pos": pos, "gene": gene.upper(), "mutation": mutation.upper()}
-            )
+            sample_id = info_dict.get("SAMPLE", "")
+            if sample_id:
+                observed_samples.add(sample_id)
+
+            variant_key = (chrom, pos, ref, alt, gene.upper(), mutation.upper(), sample_id)
+            if variant_key in seen_variants:
+                validation["duplicate_rows"] += 1
+                continue
+            seen_variants.add(variant_key)
+            distinct_combinations.add((chrom, pos, ref, alt, gene.upper(), mutation.upper()))
+
+            variants.append({
+                "chrom": chrom,
+                "pos": pos,
+                "gene": gene.upper(),
+                "mutation": mutation.upper(),
+            })
             validation["parsed_rows"] += 1
 
         validation["valid_vcf_headers"] = (
@@ -136,25 +236,19 @@ class VariantAnnotationEngine:
             if validation["parsed_rows"]
             else 0.0
         )
+        validation["patients_observed"] = len(observed_samples)
+        validation["unique_variant_combinations"] = len(distinct_combinations)
         return variants, validation
 
     @staticmethod
-    # Parses raw VCF bytes into a list of variant dicts with chrom, pos, gene, and mutation
     def parse_vcf_stream(file_bytes: bytes):
+        """Parses raw VCF bytes into a list of variant dicts with chrom, pos, gene, and mutation."""
         variants, _ = VariantAnnotationEngine.parse_vcf_stream_detailed(file_bytes)
         return variants
 
     @staticmethod
-    # Queries the SQLite clinical knowledge base for matching evidence by gene and mutation
     def match_clinical_evidence(gene: str, mutation: str, cursor=None):
-        # Normalize incoming mutation so p.V600E / c.1799T>A etc. hit the KB
-        _m = mutation.strip()
-        if _m.upper().startswith("P.") or _m.upper().startswith("C."):
-            _m = _m[2:]
-        if ":" in _m:
-            _m = _m.split(":", 1)[-1]
-        mutation = _m.strip()
-
+        """Queries the SQLite clinical knowledge base for matching evidence by gene and mutation."""
         owns_connection = cursor is None
         if owns_connection:
             conn = sqlite3.connect(DB_PATH)
@@ -162,33 +256,63 @@ class VariantAnnotationEngine:
         else:
             conn = None
 
-        # 1. Dynamically inspect table columns to find the mutation column name
         cursor.execute("PRAGMA table_info(variant_evidence)")
         columns = [col[1].lower() for col in cursor.fetchall()]
 
-        # Determine exact mutation column name used in SQLite table
         mut_col = "mutation"
         if "variant" in columns:
             mut_col = "variant"
         elif "alteration" in columns:
             mut_col = "alteration"
 
-        # 2. Clean mutation string to handle 'p.' prefix (e.g. p.E545K -> E545K)
-        clean_mutation = mutation[2:] if mutation.upper().startswith("P.") else mutation
+        norm_mut = normalize_mutation(mutation)
+        candidates = list(dict.fromkeys([
+            str(mutation).strip().upper(),
+            norm_mut.upper(),
+        ]))
+        if norm_mut.startswith(f"{gene.upper()}*"):
+            candidates.append(norm_mut[len(gene):])
+        elif norm_mut.startswith("*"):
+            candidates.append(f"{gene.upper()}{norm_mut}")
 
-        # Query matching BOTH gene and mutation first (checking original and clean forms)
-        query = f"""
-            SELECT DISTINCT disease, therapy, evidence_tier, source
-            FROM variant_evidence
-            WHERE UPPER(gene) = UPPER(?) AND (UPPER({mut_col}) = UPPER(?) OR UPPER({mut_col}) = UPPER(?))
-        """
-        cursor.execute(query, (gene, mutation, clean_mutation))
-        rows = cursor.fetchall()
+        for (g, m), alias in VIP_PGX_MAPPING.items():
+            if (gene.upper() == g or gene.upper() == "UNKNOWN") and (norm_mut == m or str(mutation).strip().upper() == m):
+                candidates.append(alias.upper())
+
+        for (g, m), phenos in VIP_PGX_PHENOTYPE_MAPPING.items():
+            if (gene.upper() == g or gene.upper() == "UNKNOWN") and (norm_mut == m or str(mutation).strip().upper() == m):
+                candidates.extend([p.upper() for p in phenos])
+
+        candidates = list(dict.fromkeys(candidates))
+        rows = []
+
+        if gene and gene.upper() != "UNKNOWN":
+            placeholders = ",".join("?" for _ in candidates)
+            query = f"""
+                SELECT DISTINCT disease, therapy, evidence_tier, source 
+                FROM variant_evidence 
+                WHERE UPPER(gene) = UPPER(?) AND UPPER({mut_col}) IN ({placeholders})
+            """
+            cursor.execute(query, [gene] + candidates)
+            rows = cursor.fetchall()
+
+            if not rows and any(c.startswith("RS") or c.startswith("*") for c in candidates):
+                placeholders = ",".join("?" for _ in candidates)
+                cursor.execute(
+                    f"SELECT DISTINCT disease, therapy, evidence_tier, source FROM variant_evidence WHERE UPPER({mut_col}) IN ({placeholders})",
+                    candidates
+                )
+                rows = cursor.fetchall()
+        else:
+            placeholders = ",".join("?" for _ in candidates)
+            cursor.execute(
+                f"SELECT DISTINCT disease, therapy, evidence_tier, source FROM variant_evidence WHERE UPPER({mut_col}) IN ({placeholders})",
+                candidates
+            )
+            rows = cursor.fetchall()
 
         match_type = "exact" if rows else "none"
 
-        # Gene-only evidence is contextual and must not be presented as an
-        # exact treatment recommendation for a different mutation.
         if not rows:
             cursor.execute(
                 """
@@ -216,7 +340,6 @@ class VariantAnnotationEngine:
                 }
             ]
 
-        # 4. Deduplicate matching records
         unique_matches = []
         seen = set()
 

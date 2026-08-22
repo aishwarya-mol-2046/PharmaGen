@@ -1,7 +1,7 @@
 import unittest
 from pathlib import Path
 
-from backend.app.services.vcf_parser import VariantAnnotationEngine
+from backend.app.services.vcf_parser import VariantAnnotationEngine, normalize_mutation
 
 # Test fixtures directory
 FIXTURES_DIR = Path(__file__).parent
@@ -17,6 +17,10 @@ class ClinicalWorkflowTests(unittest.TestCase):
         matches = VariantAnnotationEngine.match_clinical_evidence("EGFR", "p.L858R")
         self.assertTrue(matches)
         self.assertTrue(any(match["match_type"] == "exact" for match in matches))
+
+    def test_mutation_normalization(self):
+        self.assertEqual(normalize_mutation("p.Val600Glu"), "V600E")
+        self.assertEqual(normalize_mutation("ENSP00000288602:p.L858R"), "L858R")
 
     def test_gene_context_is_not_exact(self):
         matches = VariantAnnotationEngine.match_clinical_evidence("EGFR", "NOT_A_REAL_VARIANT")
