@@ -4,6 +4,20 @@ from typing import Any
 
 DB_PATH = str(Path(__file__).resolve().parents[2] / "data" / "raw" / "clinical_kb.db")
 
+HGVS_MAP = {
+    "Ala": "A", "Arg": "R", "Asn": "N", "Asp": "D", "Cys": "C", 
+    "Glu": "E", "Gln": "Q", "Gly": "G", "His": "H", "Ile": "I", 
+    "Leu": "L", "Lys": "K", "Met": "M", "Phe": "F", "Pro": "P", 
+    "Ser": "S", "Thr": "T", "Trp": "W", "Tyr": "Y", "Val": "V"
+}
+
+RSID_MAP = {
+    "rs4244285": ("CYP2C19", "*2"),
+    "rs3918290": ("DPYD", "*2A"),
+    "rs9923231": ("VKORC1", "Warfarin"),
+    "rs121913333": ("BRAF", "V600E"),
+}
+
 
 class VariantAnnotationEngine:
     @staticmethod
@@ -70,16 +84,32 @@ class VariantAnnotationEngine:
                 if len(csq_fields) >= 11 and csq_fields[10]:
                     mutation = csq_fields[10]
 
+            # Use rsID mapping if var_id is an rsID and we don't have a good mutation yet
+            if var_id.startswith("rs") and var_id in RSID_MAP:
+                r_gene, r_mut = RSID_MAP[var_id]
+                gene = r_gene
+                mutation = r_mut
+
+
             # 4) Fallback
             if not mutation:
                 mutation = f"{ref}>{alt}"
 
             # Normalize HGVSp-like prefix so p.V600E matches V600E in KB
             mut_norm = mutation.strip()
-            if mut_norm.upper().startswith("P.") or mut_norm.upper().startswith("C."):
-                mut_norm = mut_norm[2:]
+            
+            # Transcript prefix stripping (e.g. ENSP00000288602:p.Val600Glu)
             if ":" in mut_norm:
                 mut_norm = mut_norm.split(":", 1)[-1]
+                
+            if mut_norm.upper().startswith("P.") or mut_norm.upper().startswith("C."):
+                mut_norm = mut_norm[2:]
+            
+            # 3-Letter to 1-Letter translation
+            for three_let, one_let in HGVS_MAP.items():
+                if three_let in mut_norm:
+                    mut_norm = mut_norm.replace(three_let, one_let)
+                    
             mutation = mut_norm
 
             variant_key = (chrom, pos, ref, alt, gene.upper(), mutation.upper())

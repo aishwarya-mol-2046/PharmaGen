@@ -26,6 +26,11 @@ def init_real_civic_db():
         )
     """)
 
+    cursor.execute("PRAGMA table_info(variant_evidence)")
+    columns = [col[1] for col in cursor.fetchall()]
+    if "adverse_effects" not in columns:
+        cursor.execute("ALTER TABLE variant_evidence ADD COLUMN adverse_effects TEXT")
+
     print("Fetching live CIViC database release...")
     try:
         df = pd.read_csv(CIVIC_URL, sep="\t", low_memory=False)
@@ -94,6 +99,52 @@ def init_real_civic_db():
         )
         print(f"Successfully loaded {len(records)} live clinical records from CIViC into SQLite!")
 
+        # Load OncoKB Data
+        oncokb_path = Path(__file__).resolve().parents[3] / "genie_mskcc_samples_with_2017_oncokb_annotation.txt"
+        if oncokb_path.exists():
+            print("Loading OncoKB data...")
+            import re
+            
+            pattern = r"([^\(]+)\(([^ ]+) ([^\)]+)\)"
+            df_onco = pd.read_csv(oncokb_path, sep="\t", low_memory=False)
+            level_cols = ["LEVEL_1", "LEVEL_2", "LEVEL_3A", "LEVEL_3B", "LEVEL_4"]
+            
+            onco_records = []
+            for _, row in df_onco.dropna(subset=["CANCER_TYPE_DETAILED"]).iterrows():
+                disease = str(row["CANCER_TYPE_DETAILED"]).strip()
+                for level_col in level_cols:
+                    if level_col in df_onco.columns and pd.notna(row[level_col]):
+                        cell_val = str(row[level_col]).strip()
+                        for item in cell_val.split(";"):
+                            match = re.search(pattern, item)
+                            if match:
+                                drugs_raw = match.group(1).strip()
+                                gene = match.group(2).strip().upper()
+                                mutation = match.group(3).strip().upper()
+                                
+                                if mutation.startswith("P.") or mutation.startswith("C."):
+                                    mutation = mutation[2:]
+                                    
+                                for drug in drugs_raw.split(","):
+                                    onco_records.append((
+                                        gene,
+                                        mutation,
+                                        disease,
+                                        drug.strip(),
+                                        level_col.replace("_", " ").title(),
+                                        "OncoKB",
+                                    ))
+            
+            cursor.executemany(
+                """
+                INSERT OR REPLACE INTO variant_evidence
+                (gene, mutation, disease, therapy, evidence_tier, source)
+                VALUES (?, ?, ?, ?, ?, ?)
+            """,
+                onco_records,
+            )
+            print(f"Successfully loaded {len(onco_records)} clinical records from OncoKB into SQLite!")
+
     except Exception as e:
         print(f"Network fetch warning ({e}). Loading fallback core panel...")
         fallback = [
@@ -102,7 +153,8 @@ def init_real_civic_db():
             ("KRAS", "G12C", "Non-Small Cell Lung Cancer", "Sotorasib", "Level A", "CIViC"),
             ("ERBB2", "AMPLIFICATION", "Breast Cancer", "Trastuzumab", "Level A", "CIViC"),
         ]
-        cursor.executemany("INSERT OR REPLACE INTO variant_evidence VALUES (?,?,?,?,?,?)", fallback)
+        cursor.executemany("INSERT OR REPLACE INTO variant_evidence (gene, mutation, disease, therapy, evidence_tier, source) VALUES (?,?,?,?,?,?)", fallback)
+
 
     conn.commit()
     conn.close()

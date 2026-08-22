@@ -215,7 +215,7 @@ if current_content:
         st.sidebar.markdown("---")
         st.sidebar.subheader("Filter Clinical Matrix")
         all_levels = df["Evidence Level"].unique().tolist() if not df.empty else []
-        default_levels = [lvl for lvl in all_levels if "Level A" in lvl or "Level B" in lvl]
+        default_levels = all_levels
 
         selected_levels = st.sidebar.multiselect(
             "Evidence Tiers",
@@ -230,7 +230,7 @@ if current_content:
         st.markdown('<div class="section-label">Evidence overview</div>', unsafe_allow_html=True)
         c1, c2, c3, c4 = st.columns(4)
         c1.metric("Variants reviewed", f"{data['variants_count']:,}")
-        c2.metric("Exact CIViC matches", f"{data.get('exact_matches', 0):,}")
+        c2.metric("Exact Clinical Matches", f"{data.get('exact_matches', 0):,}")
         high_confidence_exact = (
             df[
                 df["Evidence Level"].str.contains("Level A|Level B", na=False)
