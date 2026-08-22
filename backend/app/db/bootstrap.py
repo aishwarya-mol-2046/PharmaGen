@@ -20,9 +20,11 @@ def init_real_civic_db():
             therapy TEXT,
             evidence_tier TEXT,
             source TEXT,
-            PRIMARY KEY (gene, mutation, therapy, disease)
+            PRIMARY KEY (gene, mutation, therapy, disease, source)
         )
     """)
+    cursor.execute("CREATE INDEX IF NOT EXISTS idx_var_ev_gene_mut ON variant_evidence (gene, mutation)")
+    cursor.execute("CREATE INDEX IF NOT EXISTS idx_var_ev_gene ON variant_evidence (gene)")
     
     print("Fetching live CIViC database release...")
     try:

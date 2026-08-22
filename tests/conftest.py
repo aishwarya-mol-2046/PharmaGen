@@ -22,7 +22,7 @@ def ensure_database():
                 therapy TEXT,
                 evidence_tier TEXT,
                 source TEXT,
-                PRIMARY KEY (gene, mutation, therapy, disease)
+                PRIMARY KEY (gene, mutation, therapy, disease, source)
             )
         """)
         # Insert minimal test data

@@ -20,14 +20,20 @@ if (-not $SkipInstall) {
     & $Pip install -r (Join-Path $ProjectDir "requirements.txt") -q
 }
 
+$DbPath = Join-Path $ProjectDir "backend\data\raw\clinical_kb.db"
+if (-not (Test-Path $DbPath)) {
+    Write-Host "Initializing clinical database..."
+    & (Join-Path $VenvDir "Scripts\python.exe") (Join-Path $ProjectDir "backend\app\db\bootstrap.py")
+}
+
 $BackendArgs = @(
     "-m", "uvicorn", "app.main:app",
-    "--app-dir", "`"$(Join-Path $ProjectDir "backend")`"",
+    "--app-dir", (Join-Path $ProjectDir "backend"),
     "--host", $BackendHost,
     "--port", "$BackendPort"
 )
 $FrontendArgs = @(
-    "run", "`"$(Join-Path $ProjectDir "frontend\app.py")`"",
+    "run", (Join-Path $ProjectDir "frontend\app.py"),
     "--server.port", "$FrontendPort",
     "--server.headless", "true"
 )
@@ -35,8 +41,8 @@ $FrontendArgs = @(
 $Backend = Start-Process -FilePath (Join-Path $VenvDir "Scripts\python.exe") -ArgumentList $BackendArgs -PassThru
 $Frontend = Start-Process -FilePath $Streamlit -ArgumentList $FrontendArgs -PassThru
 
-Write-Host "Backend:  http://$BackendHost:$BackendPort"
-Write-Host "Frontend: http://localhost:$FrontendPort"
+Write-Host "Backend:  http://${BackendHost}:${BackendPort}"
+Write-Host "Frontend: http://localhost:${FrontendPort}"
 Write-Host "Press Ctrl+C to stop both services."
 
 try {
@@ -45,3 +51,4 @@ try {
 finally {
     Stop-Process -Id $Backend.Id, $Frontend.Id -Force -ErrorAction SilentlyContinue
 }
+
