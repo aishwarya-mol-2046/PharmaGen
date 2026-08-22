@@ -1,6 +1,8 @@
 """Pytest configuration for PharmaGen tests."""
-from pathlib import Path
+
 import sqlite3
+from pathlib import Path
+
 import pytest
 
 from backend.app.services.vcf_parser import DB_PATH

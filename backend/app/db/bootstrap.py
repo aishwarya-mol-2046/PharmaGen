@@ -4,6 +4,7 @@ import re
 import sqlite3
 import zipfile
 from pathlib import Path
+
 import pandas as pd
 import requests
 
@@ -51,7 +52,6 @@ def _get_connection():
             PRIMARY KEY (gene, mutation, therapy, disease, source)
         )
     """)
-    # Lightweight migration: check and add extra columns on the fly without dropping data
     cursor.execute("PRAGMA table_info(variant_evidence)")
     existing_cols = {col[1].lower() for col in cursor.fetchall()}
     for col_name, col_type in [("adverse_effects", "TEXT"), ("phenotype_category", "TEXT")]:
@@ -65,13 +65,14 @@ def _get_connection():
 
 
 def init_real_civic_db(conn=None):
+    """Fetch live CIViC database release."""
     owns_conn = conn is None
     conn = _get_connection() if owns_conn else conn
     cursor = conn.cursor()
 
     print("Fetching live CIViC database release...")
     try:
-        df = pd.read_csv(CIVIC_URL, sep="\t", low_memory=False)
+        df = pd.read_csv(CIVIC_URL, sep="	", low_memory=False)
 
         cols = {c.lower(): c for c in df.columns}
         disease_col = cols.get("disease", cols.get("disease_name"))
@@ -134,6 +135,69 @@ def init_real_civic_db(conn=None):
         conn.close()
 
 
+def init_oncokb_db(conn=None):
+    """Loads OncoKB data from local annotation file if present."""
+    owns_conn = conn is None
+    conn = _get_connection() if owns_conn else conn
+    cursor = conn.cursor()
+
+    oncokb_path = Path(__file__).resolve().parents[3] / "genie_mskcc_samples_with_2017_oncokb_annotation.txt"
+    if not oncokb_path.exists():
+        print(f"OncoKB annotation file not found at {oncokb_path}, skipping OncoKB ingestion.")
+        if owns_conn:
+            conn.close()
+        return
+
+    print("Loading OncoKB data...")
+    try:
+        pattern = r"([^\(]+)\(([^ ]+) ([^\)]+)\)"
+        df_onco = pd.read_csv(oncokb_path, sep="	", low_memory=False)
+        level_cols = ["LEVEL_1", "LEVEL_2", "LEVEL_3A", "LEVEL_3B", "LEVEL_4"]
+
+        onco_records = []
+        for _, row in df_onco.dropna(subset=["CANCER_TYPE_DETAILED"]).iterrows():
+            disease = str(row["CANCER_TYPE_DETAILED"]).strip()
+            for level_col in level_cols:
+                if level_col in df_onco.columns and pd.notna(row[level_col]):
+                    cell_val = str(row[level_col]).strip()
+                    for item in cell_val.split(";"):
+                        match = re.search(pattern, item)
+                        if match:
+                            drugs_raw = match.group(1).strip()
+                            gene = match.group(2).strip().upper()
+                            mutation = match.group(3).strip().upper()
+
+                            if mutation.startswith("P.") or mutation.startswith("C."):
+                                mutation = mutation[2:]
+
+                            for drug in drugs_raw.split(","):
+                                drug_clean = drug.strip()
+                                if drug_clean:
+                                    onco_records.append((
+                                        gene,
+                                        mutation,
+                                        disease,
+                                        drug_clean,
+                                        level_col.replace("_", " "),
+                                        "OncoKB",
+                                    ))
+
+        if onco_records:
+            cursor.executemany("""
+                INSERT OR REPLACE INTO variant_evidence
+                (gene, mutation, disease, therapy, evidence_tier, source)
+                VALUES (?, ?, ?, ?, ?, ?)
+            """, onco_records)
+            conn.commit()
+            print(f"Successfully loaded {len(onco_records)} clinical records from OncoKB into SQLite!")
+
+    except Exception as e:
+        print(f"OncoKB ingestion warning ({e}). Continuing...")
+
+    if owns_conn:
+        conn.close()
+
+
 def init_pharmgkb_db(conn=None, zip_path=None):
     """Downloads or extracts PharmGKB/ClinPGx clinical annotations into SQLite."""
     owns_conn = conn is None
@@ -151,27 +215,38 @@ def init_pharmgkb_db(conn=None, zip_path=None):
             headers = {"User-Agent": "Mozilla/5.0"}
             for url in PHARMGKB_URLS:
                 try:
-                    resp = requests.get(url, headers=headers, timeout=30)
-                    if resp.status_code == 200 and resp.content:
-                        content_bytes = resp.content
+                    res = requests.get(url, headers=headers, timeout=25)
+                    if res.status_code == 200 and len(res.content) > 1000:
+                        content_bytes = res.content
                         break
                 except Exception:
                     continue
 
         if not content_bytes:
-            raise RuntimeError("Could not download PharmGKB archive from any endpoint.")
+            raise RuntimeError("Could not download clinicalAnnotations.zip from PharmGKB/ClinPGx endpoints.")
 
         with zipfile.ZipFile(io.BytesIO(content_bytes)) as z:
-            with z.open("clinical_annotations.tsv") as f:
-                df = pd.read_csv(f, sep="\t", dtype=str, low_memory=False)
+            tsv_names = [n for n in z.namelist() if "clinical_annotations.tsv" in n.lower() or n.endswith(".tsv")]
+            if not tsv_names:
+                raise FileNotFoundError("No TSV found in PharmGKB zip archive.")
+            with z.open(tsv_names[0]) as tsv_file:
+                df = pd.read_csv(tsv_file, sep="	", low_memory=False)
+
+        cols = {c.lower(): c for c in df.columns}
+        genes_col = cols.get("gene", cols.get("genes", cols.get("gene(s)")))
+        variant_col = cols.get("variant/haplotypes", cols.get("variant", cols.get("variant / haplotypes", cols.get("variant_name"))))
+        drug_col = cols.get("drug(s)", cols.get("drugs", cols.get("drug", cols.get("medication"))))
+        phenos_col = cols.get("phenotype(s)", cols.get("phenotype", cols.get("phenotype_name", cols.get("indication"))))
+        level_col = cols.get("level of evidence", cols.get("level", cols.get("evidence_level")))
+        cat_col = cols.get("phenotype category", cols.get("category"))
 
         for _, row in df.iterrows():
-            genes_raw = str(row.get("Gene", "")).strip()
-            variants_raw = str(row.get("Variant/Haplotypes", "")).strip()
-            drugs_raw = str(row.get("Drug(s)", "")).strip()
-            phenos_raw = str(row.get("Phenotype(s)", "")).strip()
-            category = str(row.get("Phenotype Category", "Drug Response")).strip()
-            level = str(row.get("Level of Evidence", "")).strip()
+            genes_raw = str(row[genes_col]).strip() if genes_col and pd.notna(row[genes_col]) else ""
+            variants_raw = str(row[variant_col]).strip() if variant_col and pd.notna(row[variant_col]) else ""
+            drugs_raw = str(row[drug_col]).strip() if drug_col and pd.notna(row[drug_col]) else ""
+            phenos_raw = str(row[phenos_col]).strip() if phenos_col and pd.notna(row[phenos_col]) else ""
+            level = str(row[level_col]).strip() if level_col and pd.notna(row[level_col]) else ""
+            category = str(row[cat_col]).strip() if cat_col and pd.notna(row[cat_col]) else "Pharmacogenomics"
 
             if not genes_raw or genes_raw.lower() == "nan":
                 continue
@@ -186,7 +261,6 @@ def init_pharmgkb_db(conn=None, zip_path=None):
 
             evidence_tier = f"PharmGKB Level {level}" if level and level.lower() != "nan" else "PharmGKB Level 3"
 
-            # Split compound entries cleanly so individual gene-variant matches succeed
             gene_list = [g.strip().upper() for g in re.split(r"[,;]+", genes_raw) if g.strip()]
             drug_list = [d.strip() for d in drugs_raw.split(";") if d.strip()]
 
@@ -210,13 +284,14 @@ def init_pharmgkb_db(conn=None, zip_path=None):
                             "PharmGKB",
                         ))
 
-        cursor.executemany("""
-            INSERT OR REPLACE INTO variant_evidence 
-            (gene, mutation, disease, therapy, evidence_tier, source) 
-            VALUES (?, ?, ?, ?, ?, ?)
-        """, records)
-        conn.commit()
-        print(f"Successfully loaded {len(records)} clinical records from PharmGKB into SQLite!")
+        if records:
+            cursor.executemany("""
+                INSERT OR REPLACE INTO variant_evidence 
+                (gene, mutation, disease, therapy, evidence_tier, source) 
+                VALUES (?, ?, ?, ?, ?, ?)
+            """, records)
+            conn.commit()
+            print(f"Successfully loaded {len(records)} clinical records from PharmGKB into SQLite!")
 
     except Exception as e:
         print(f"PharmGKB fetch warning ({e}). Loading curated PGx core panel...")
@@ -239,7 +314,11 @@ def init_pharmgkb_db(conn=None, zip_path=None):
             ("HLA-B", "*57:01", "Severe Abacavir Hypersensitivity Reaction", "Abacavir", "PharmGKB Level 1A", "PharmGKB"),
             ("HLA-B", "*15:02", "Stevens-Johnson Syndrome / Toxic Epidermal Necrolysis", "Carbamazepine", "PharmGKB Level 1A", "PharmGKB"),
         ]
-        cursor.executemany("INSERT OR REPLACE INTO variant_evidence VALUES (?,?,?,?,?,?)", fallback)
+        cursor.executemany("""
+            INSERT OR REPLACE INTO variant_evidence 
+            (gene, mutation, disease, therapy, evidence_tier, source) 
+            VALUES (?, ?, ?, ?, ?, ?)
+        """, fallback)
         conn.commit()
 
     if owns_conn:
@@ -330,10 +409,11 @@ def init_cpic_guidelines_db(conn=None):
 def bootstrap_all():
     conn = _get_connection()
     init_real_civic_db(conn=conn)
+    init_oncokb_db(conn=conn)
     init_pharmgkb_db(conn=conn)
     init_cpic_guidelines_db(conn=conn)
     conn.close()
 
 
 if __name__ == "__main__":
-    bootstrap_all()
+    bootstrap_all()

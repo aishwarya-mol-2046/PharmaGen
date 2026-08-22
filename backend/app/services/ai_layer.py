@@ -4,9 +4,8 @@ import json
 import os
 from typing import Any
 
-import requests
+import requests  # type: ignore[import-untyped]
 from dotenv import load_dotenv
-
 
 load_dotenv()
 
@@ -28,15 +27,23 @@ def _local_review(evidence: dict[str, Any], context: str) -> dict[str, Any]:
     flags = []
 
     if "kidney" in context_lower or "renal" in context_lower:
-        flags.append("Review renal function and product-specific dose guidance before considering therapy.")
+        flags.append(
+            "Review renal function and product-specific dose guidance before considering therapy."
+        )
     if "liver" in context_lower or "hepatic" in context_lower:
-        flags.append("Review hepatic function and product-specific dose guidance before considering therapy.")
+        flags.append(
+            "Review hepatic function and product-specific dose guidance before considering therapy."
+        )
     if "prior therapy failure" in context_lower or "progression" in context_lower:
         flags.append("Review prior exposure, resistance history, and sequencing evidence.")
     if not context.strip():
-        flags.append("No patient context was supplied; safety cannot be assessed from genomic evidence alone.")
+        flags.append(
+            "No patient context was supplied; safety cannot be assessed from genomic evidence alone."
+        )
     if not flags:
-        flags.append("No rule-based context flag was triggered; this is not a clearance or safety determination.")
+        flags.append(
+            "No rule-based context flag was triggered; this is not a clearance or safety determination."
+        )
 
     return {
         "provider": "local-review",
@@ -95,6 +102,8 @@ def _llm_review(evidence: dict[str, Any], context: str) -> dict[str, Any] | None
         if content.strip().startswith("```"):
             content = content.strip().split("\n", 1)[1].rsplit("```", 1)[0].strip()
         result = json.loads(content)
+        if not isinstance(result, dict):
+            return None
         result["provider"] = f"{provider}-llm"
         result["disclaimer"] = DISCLAIMER
         return result

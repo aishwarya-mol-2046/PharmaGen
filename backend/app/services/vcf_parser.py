@@ -1,64 +1,40 @@
+import os
 import re
 import sqlite3
 from pathlib import Path
+from typing import Any
 
 DB_PATH = str(Path(__file__).resolve().parents[2] / "data" / "raw" / "clinical_kb.db")
 
+# 3-letter to 1-letter amino acid dictionary
 AA3_TO_AA1 = {
-    "ALA": "A", "ARG": "R", "ASN": "N", "ASP": "D", "CYS": "C", "GLN": "Q", "GLU": "E",
-    "GLY": "G", "HIS": "H", "ILE": "I", "LEU": "L", "LYS": "K", "MET": "M", "PHE": "F",
-    "PRO": "P", "SER": "S", "THR": "T", "TRP": "W", "TYR": "Y", "VAL": "V", "TER": "*",
-    "SEC": "U", "PYL": "O",
+    "ALA": "A", "CYS": "C", "ASP": "D", "GLU": "E", "PHE": "F",
+    "GLY": "G", "HIS": "H", "ILE": "I", "LYS": "K", "LEU": "L",
+    "MET": "M", "ASN": "N", "PRO": "P", "GLN": "Q", "ARG": "R",
+    "SER": "S", "THR": "T", "VAL": "V", "TRP": "W", "TYR": "Y",
+    "TER": "*", "STOP": "*",
 }
 
+HGVS_MAP = {
+    "VAL600GLU": "V600E",
+    "LEU858ARG": "L858R",
+    "GLY12CYS": "G12C",
+    "GLY12VAL": "G12V",
+    "GLY12ASP": "G12D",
+    "GLU545LYS": "E545K",
+    "HIS1047ARG": "H1047R",
+    "ARG248GLN": "R248Q",
+    "ARG273HIS": "R273H",
+    "THR790MET": "T790M",
+}
 
-def normalize_mutation(raw_mut: str) -> str:
-    """Normalize raw mutation strings into standardized notation.
-    
-    1. Strips transcript prefixes (e.g. ENSP00000288602:, NP_004324.2:)
-    2. Strips 'p.' protein prefix
-    3. Translates 3-letter amino acid notations to 1-letter (e.g. p.Val600Glu -> V600E)
-    """
-    if not raw_mut:
-        return ""
-    m = str(raw_mut).strip()
-    if ":" in m:
-        m = m.split(":")[-1].strip()
-    if m.upper().startswith("P."):
-        m = m[2:].strip()
-
-    match = re.match(r"^([A-Za-z]{3})(\d+)([A-Za-z]{3}|\*|=|del|ins|fs.*)?$", m, re.IGNORECASE)
-    if match:
-        a1, pos, a2 = match.groups()
-        a1_1 = AA3_TO_AA1.get(a1.upper(), a1.upper())
-        a2_1 = AA3_TO_AA1.get((a2 or "").upper(), (a2 or "").upper())
-        return f"{a1_1}{pos}{a2_1}"
-    return m.upper()
-
-
-def parse_csq_or_ann(info_dict: dict) -> tuple[str | None, str | None]:
-    """Extract gene symbol and protein mutation from VEP (CSQ) or SnpEff (ANN) fields."""
-    gene, mut = None, None
-    if "CSQ" in info_dict:
-        csq_first = info_dict["CSQ"].split(",")[0]
-        csq_parts = csq_first.split("|")
-        if len(csq_parts) > 3 and csq_parts[3]:
-            gene = csq_parts[3].strip()
-        for part in csq_parts:
-            if "p." in part.lower():
-                mut = part.strip()
-                break
-    elif "ANN" in info_dict:
-        ann_first = info_dict["ANN"].split(",")[0]
-        ann_parts = ann_first.split("|")
-        if len(ann_parts) > 3 and ann_parts[3]:
-            gene = ann_parts[3].strip()
-        for part in ann_parts:
-            if "p." in part.lower():
-                mut = part.strip()
-                break
-    return gene, mut
-
+RSID_MAP = {
+    "rs121913333": ("BRAF", "V600E"),
+    "rs121434568": ("EGFR", "L858R"),
+    "rs121913529": ("KRAS", "G12C"),
+    "rs11555212": ("PIK3CA", "E545K"),
+    "rs28934578": ("TP53", "R248Q"),
+}
 
 VIP_PGX_MAPPING = {
     ("CYP2C19", "RS4244285"): "*2",
@@ -118,12 +94,60 @@ VIP_PGX_PHENOTYPE_MAPPING = {
 }
 
 
+def normalize_mutation(mut_str: str | None) -> str:
+    """Standardizes mutation strings (strips prefixes, translates 3-letter HGVS to 1-letter)."""
+    if not mut_str:
+        return ""
+    m = str(mut_str).strip()
+    if ":" in m and "::" not in m:
+        m = m.split(":", 1)[-1].strip()
+    if m.upper().startswith("P.") or m.upper().startswith("C."):
+        m = m[2:].strip()
+
+    match = re.match(r"^([A-Za-z]{3})(\d+)([A-Za-z]{3}|\*|=|del|ins|fs.*)?$", m, re.IGNORECASE)
+    if match:
+        a1, pos, a2 = match.groups()
+        a1_1 = AA3_TO_AA1.get(a1.upper(), a1.upper())
+        a2_1 = AA3_TO_AA1.get((a2 or "").upper(), (a2 or "").upper())
+        return f"{a1_1}{pos}{a2_1}"
+
+    for three_let, one_let in HGVS_MAP.items():
+        if three_let in m:
+            m = m.replace(three_let, one_let)
+
+    return m.upper()
+
+
+def parse_csq_or_ann(info_dict: dict) -> tuple[str | None, str | None]:
+    """Extract gene symbol and protein mutation from VEP (CSQ) or SnpEff (ANN) fields."""
+    gene, mut = None, None
+    if "CSQ" in info_dict:
+        csq_first = info_dict["CSQ"].split(",")[0]
+        csq_parts = csq_first.split("|")
+        if len(csq_parts) >= 4 and csq_parts[3]:
+            gene = csq_parts[3].strip()
+        for part in csq_parts:
+            if "p." in part.lower():
+                mut = part.strip()
+                break
+    elif "ANN" in info_dict:
+        ann_first = info_dict["ANN"].split(",")[0]
+        ann_parts = ann_first.split("|")
+        if len(ann_parts) >= 4 and ann_parts[3]:
+            gene = ann_parts[3].strip()
+        for part in ann_parts:
+            if "p." in part.lower():
+                mut = part.strip()
+                break
+    return gene, mut
+
+
 class VariantAnnotationEngine:
     @staticmethod
     def parse_vcf_stream_detailed(file_bytes: bytes):
         """Parse VCF bytes and return variants plus an input-quality report."""
         variants = []
-        validation = {
+        validation: dict[str, Any] = {
             "fileformat_header": False,
             "column_header": False,
             "data_rows": 0,
@@ -132,8 +156,12 @@ class VariantAnnotationEngine:
             "gene_annotated_rows": 0,
             "mutation_annotated_rows": 0,
             "duplicate_rows": 0,
+            "valid_vcf_headers": False,
+            "annotation_coverage_percent": 0.0,
         }
         seen_variants = set()
+        distinct_combinations = set()
+        observed_samples = set()
 
         for line in file_bytes.decode("utf-8", errors="ignore").splitlines():
             stripped_line = line.strip()
@@ -149,7 +177,7 @@ class VariantAnnotationEngine:
                 continue
 
             validation["data_rows"] += 1
-            parts = stripped_line.split("\t")
+            parts = stripped_line.split("	")
             if len(parts) < 8:
                 validation["skipped_rows"] += 1
                 continue
@@ -163,28 +191,41 @@ class VariantAnnotationEngine:
 
             csq_gene, csq_mut = parse_csq_or_ann(info_dict)
             gene = info_dict.get("GENE") or info_dict.get("SYMBOL") or csq_gene or "UNKNOWN"
-            
-            raw_mut = (
-                info_dict.get("MUT")
-                or info_dict.get("MUTATION")
-                or info_dict.get("HGVSP")
-                or info_dict.get("HGVS_P")
-                or csq_mut
-                or (var_id.strip() if var_id and var_id.strip() != "." and var_id.strip().lower().startswith("rs") else None)
-                or f"{ref}>{alt}"
-            )
+
+            if var_id.lower().startswith("rs") and var_id in RSID_MAP:
+                r_gene, r_mut = RSID_MAP[var_id]
+                if gene == "UNKNOWN":
+                    gene = r_gene
+                raw_mut = r_mut
+            else:
+                raw_mut = (
+                    info_dict.get("MUT")
+                    or info_dict.get("MUTATION")
+                    or info_dict.get("HGVSP")
+                    or info_dict.get("HGVS_P")
+                    or csq_mut
+                    or (var_id.strip() if var_id and var_id.strip() != "." and var_id.strip().lower().startswith("rs") else None)
+                    or f"{ref}>{alt}"
+                )
+
             mutation = normalize_mutation(raw_mut)
 
             if gene != "UNKNOWN":
                 validation["gene_annotated_rows"] += 1
-            if "MUT" in info_dict or "HGVSP" in info_dict or "MUTATION" in info_dict or csq_mut or (var_id and var_id.lower().startswith("rs")):
+            if any(k in info_dict for k in ("MUT", "HGVSP", "MUTATION", "ANN", "CSQ")) or (var_id and var_id.lower().startswith("rs")):
                 validation["mutation_annotated_rows"] += 1
 
-            variant_key = (chrom, pos, ref, alt, gene.upper(), mutation.upper())
+            sample_id = info_dict.get("SAMPLE", "")
+            if sample_id:
+                observed_samples.add(sample_id)
+
+            variant_key = (chrom, pos, ref, alt, gene.upper(), mutation.upper(), sample_id)
             if variant_key in seen_variants:
                 validation["duplicate_rows"] += 1
+                continue
             seen_variants.add(variant_key)
-            
+            distinct_combinations.add((chrom, pos, ref, alt, gene.upper(), mutation.upper()))
+
             variants.append({
                 "chrom": chrom,
                 "pos": pos,
@@ -193,10 +234,16 @@ class VariantAnnotationEngine:
             })
             validation["parsed_rows"] += 1
 
-        validation["valid_vcf_headers"] = validation["fileformat_header"] and validation["column_header"]
-        validation["annotation_coverage_percent"] = round(
-            validation["gene_annotated_rows"] / validation["parsed_rows"] * 100, 1
-        ) if validation["parsed_rows"] else 0.0
+        validation["valid_vcf_headers"] = (
+            validation["fileformat_header"] and validation["column_header"]
+        )
+        validation["annotation_coverage_percent"] = (
+            round(validation["gene_annotated_rows"] / validation["parsed_rows"] * 100, 1)
+            if validation["parsed_rows"]
+            else 0.0
+        )
+        validation["patients_observed"] = len(observed_samples)
+        validation["unique_variant_combinations"] = len(distinct_combinations)
         return variants, validation
 
     @staticmethod
@@ -209,20 +256,21 @@ class VariantAnnotationEngine:
     def match_clinical_evidence(gene: str, mutation: str, cursor=None):
         """Queries the SQLite clinical knowledge base for matching evidence by gene and mutation."""
         owns_connection = cursor is None
-        conn = sqlite3.connect(DB_PATH) if owns_connection else None
-        cursor = conn.cursor() if owns_connection else cursor
-        
-        # 1. Dynamically inspect table columns to find the mutation column name
+        if owns_connection:
+            conn = sqlite3.connect(DB_PATH)
+            cursor = conn.cursor()
+        else:
+            conn = None
+
         cursor.execute("PRAGMA table_info(variant_evidence)")
         columns = [col[1].lower() for col in cursor.fetchall()]
-        
+
         mut_col = "mutation"
         if "variant" in columns:
             mut_col = "variant"
         elif "alteration" in columns:
             mut_col = "alteration"
-        
-        # 2. Collect candidate search keys for normalized, alias, and original mutation representations
+
         norm_mut = normalize_mutation(mutation)
         candidates = list(dict.fromkeys([
             str(mutation).strip().upper(),
@@ -256,7 +304,7 @@ class VariantAnnotationEngine:
             cursor.execute(query, [gene] + candidates)
             rows = cursor.fetchall()
 
-            # If no match and mutation is an rsID or star-allele, perform fallback variant search
+            # Fallback variant search
             if not rows and any(c.startswith("RS") or c.startswith("*") for c in candidates):
                 placeholders = ",".join("?" for _ in candidates)
                 cursor.execute(
@@ -265,21 +313,18 @@ class VariantAnnotationEngine:
                 )
                 rows = cursor.fetchall()
         else:
-            # Gene is UNKNOWN: match directly against variant/rsID
             placeholders = ",".join("?" for _ in candidates)
             cursor.execute(
                 f"SELECT DISTINCT disease, therapy, evidence_tier, source FROM variant_evidence WHERE UPPER({mut_col}) IN ({placeholders})",
                 candidates
             )
             rows = cursor.fetchall()
-        
+
         match_type = "exact" if rows else "none"
 
-        # Gene-only evidence is contextual and must not be presented as an
-        # exact treatment recommendation for a different mutation.
         if not rows:
             cursor.execute(
-                f"""
+                """
                 SELECT DISTINCT disease, therapy, evidence_tier, source 
                 FROM variant_evidence 
                 WHERE UPPER(gene) = UPPER(?)
@@ -290,9 +335,9 @@ class VariantAnnotationEngine:
             rows = cursor.fetchall()
             match_type = "gene_context" if rows else "none"
 
-        if owns_connection:
+        if owns_connection and conn is not None:
             conn.close()
-        
+
         if not rows:
             return [{
                 "disease": "No Direct Match",
@@ -301,11 +346,10 @@ class VariantAnnotationEngine:
                 "source": "N/A",
                 "match_type": match_type,
             }]
-        
-        # Deduplicate matching records
+
         unique_matches = []
         seen = set()
-        
+
         for r in rows:
             record_tuple = (r[0], r[1], r[2], r[3])
             if record_tuple not in seen:
@@ -317,5 +361,5 @@ class VariantAnnotationEngine:
                     "source": r[3],
                     "match_type": match_type,
                 })
-        
+
         return unique_matches

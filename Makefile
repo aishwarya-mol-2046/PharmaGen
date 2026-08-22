@@ -1,4 +1,4 @@
-.PHONY: help install install-dev bootstrap test test-coverage lint format typecheck clean run backend frontend all
+.PHONY: help install install-dev bootstrap test test-coverage lint format typecheck clean clean-db clean-all run backend frontend all
 
 help: ## Show this help message
 	@grep -E '^[a-zA-Z_-]+:.*?## .*$$' $(MAKEFILE_LIST) | sort | awk 'BEGIN {FS = ":.*?## "}; {printf "\033[36m%-20s\033[0m %s\n", $$1, $$2}'
@@ -28,11 +28,17 @@ format: ## Format code
 typecheck: ## Run type checker
 	mypy backend/ --ignore-missing-imports
 
-clean: ## Clean generated files
+clean: ## Clean generated files (caches only, DB preserved)
 	rm -rf __pycache__ .pytest_cache .mypy_cache .ruff_cache
 	rm -rf backend/**/__pycache__ frontend/**/__pycache__ tests/**/__pycache__
 	rm -f frontend_graph.html
+
+clean-db: ## Clean clinical knowledge base DB (use with care)
 	rm -rf backend/data/raw/*.db
+
+clean-all: ## Clean everything (caches + DB)
+	$(MAKE) clean
+	$(MAKE) clean-db
 
 run: ## Run both backend and frontend
 	./run.sh
