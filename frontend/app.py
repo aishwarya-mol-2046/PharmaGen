@@ -560,6 +560,7 @@ else:
                 st.session_state["uploaded_filename"] = "demo_patient_1000.vcf"
                 st.session_state["uploaded_content"] = demo_bytes
                 st.session_state["uploaded_hash"] = hashlib.sha256(demo_bytes).hexdigest()
+                
                 st.session_state.pop("analysis_data", None)
                 st.rerun()
 
