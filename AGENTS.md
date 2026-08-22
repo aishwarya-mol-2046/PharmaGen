@@ -111,6 +111,7 @@ def review_evidence(evidence: dict, context: str) -> dict:
 4. **Never** bypass `parse_vcf_stream_detailed` for validation — the quality report is required by the frontend.
 5. **Never** add patient identifiers to logs, AI prompts, or session state.
 6. **Never** commit secrets — `.env` stays local; API keys via `os.environ` only.
+7. **Never** implement a feature without confirming the approach with the user first.
 
 ## Evidence Match Policy
 
