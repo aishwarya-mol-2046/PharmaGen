@@ -1,24 +1,50 @@
 import sqlite3
+from pathlib import Path
 
-from fastapi import FastAPI, UploadFile, File, HTTPException
-from app.services.vcf_parser import DB_PATH, VariantAnnotationEngine
-from app.services.report_generator import generate_html_report
+from fastapi import FastAPI, File, HTTPException, UploadFile
+from fastapi.middleware.cors import CORSMiddleware
+
 from app.services.ai_layer import review_evidence
+from app.services.vcf_parser import DB_PATH, VariantAnnotationEngine
 
 app = FastAPI(title="PharmaGen Clinical API")
 
+app.add_middleware(
+    CORSMiddleware,
+    allow_origins=["*"],
+    allow_methods=["*"],
+    allow_headers=["*"],
+)
+
+# Keep upload guard small and deterministic for industry demo (<2s path)
+MAX_UPLOAD_BYTES = 10 * 1024 * 1024
+
 @app.get("/health")
 async def health_check():
-    with sqlite3.connect(DB_PATH) as connection:
-        evidence_count = connection.execute("SELECT COUNT(*) FROM variant_evidence").fetchone()[0]
+    db_path = Path(DB_PATH)
+    if not db_path.exists():
+        return {"status": "ok", "knowledge_base": "missing", "evidence_records": 0}
+    try:
+        with sqlite3.connect(DB_PATH) as connection:
+            evidence_count = connection.execute("SELECT COUNT(*) FROM variant_evidence").fetchone()[0]
+    except sqlite3.OperationalError:
+        return {"status": "ok", "knowledge_base": "empty", "evidence_records": 0}
     return {"status": "ok", "knowledge_base": "loaded", "evidence_records": evidence_count}
 
 @app.post("/api/v1/analyze")
 # Handles VCF upload, annotates variants with clinical evidence, and returns JSON results
 async def analyze_patient_vcf(file: UploadFile = File(...)):
     contents = await file.read()
+    if not contents or not contents.strip():
+        raise HTTPException(status_code=400, detail="Uploaded file is empty.")
+    if len(contents) > MAX_UPLOAD_BYTES:
+        raise HTTPException(status_code=413, detail=f"File too large (max {MAX_UPLOAD_BYTES // (1024*1024)} MB).")
     raw_variants, validation = VariantAnnotationEngine.parse_vcf_stream_detailed(contents)
-    
+    if not raw_variants and validation["data_rows"] == 0:
+        raise HTTPException(status_code=400, detail="No valid VCF variants found. Check headers and data rows.")
+
+    if not Path(DB_PATH).exists():
+        raise HTTPException(status_code=503, detail="Knowledge base not initialized. Run: make bootstrap")
     annotated = []
     with sqlite3.connect(DB_PATH) as connection:
         cursor = connection.cursor()
@@ -39,7 +65,7 @@ async def analyze_patient_vcf(file: UploadFile = File(...)):
         if all(match.get("match_type") == "none" for match in item["clinical_matches"])
     )
     synthetic_data = b"##synthetic_data=true" in contents[:8192] or b"SYNTHETIC=1" in contents[:8192]
-        
+
     return {
         "status": "success",
         "variants_count": len(raw_variants),

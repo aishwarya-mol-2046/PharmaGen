@@ -46,18 +46,52 @@ class VariantAnnotationEngine:
                     k, v = item.split("=", 1)
                     info_dict[k.upper()] = v.strip()
 
+            # 1) Custom PharmaGen keys
             gene = info_dict.get("GENE") or info_dict.get("SYMBOL") or "UNKNOWN"
-            mutation = info_dict.get("MUT") or info_dict.get("HGVSP") or f"{ref}>{alt}"
-            if gene != "UNKNOWN":
-                validation["gene_annotated_rows"] += 1
-            if "MUT" in info_dict or "HGVSP" in info_dict:
-                validation["mutation_annotated_rows"] += 1
+            mutation = info_dict.get("MUT") or info_dict.get("HGVSP")
+
+            # 2) SnpEff ANN= field: ANN=allele|effect|impact|gene|...|hgvs_c|hgvs_p
+            if not mutation and "ANN" in info_dict:
+                ann_fields = info_dict["ANN"].split("|")
+                if len(ann_fields) >= 4 and ann_fields[3]:
+                    gene = ann_fields[3]
+                if len(ann_fields) >= 11 and ann_fields[10]:
+                    mutation = ann_fields[10]
+
+            # 3) VEP CSQ= field
+            if not mutation and "CSQ" in info_dict:
+                csq_fields = info_dict["CSQ"].split("|")
+                if len(csq_fields) >= 4 and csq_fields[3]:
+                    gene = csq_fields[3]
+                if len(csq_fields) >= 11 and csq_fields[10]:
+                    mutation = csq_fields[10]
+
+            # 4) Fallback
+            if not mutation:
+                mutation = f"{ref}>{alt}"
+
+            # Normalize HGVSp-like prefix so p.V600E matches V600E in KB
+            mut_norm = mutation.strip()
+            if mut_norm.upper().startswith("P."):
+                mut_norm = mut_norm[2:]
+            elif mut_norm.upper().startswith("C."):
+                mut_norm = mut_norm[2:]
+            if ":" in mut_norm:
+                mut_norm = mut_norm.split(":", 1)[-1]
+            mutation = mut_norm
 
             variant_key = (chrom, pos, ref, alt, gene.upper(), mutation.upper())
             if variant_key in seen_variants:
                 validation["duplicate_rows"] += 1
+                continue
             seen_variants.add(variant_key)
-            
+
+            if gene != "UNKNOWN":
+                validation["gene_annotated_rows"] += 1
+            # Count mutation annotation if it came from an annotation field (not fallback)
+            if any(k in info_dict for k in ("MUT", "HGVSP", "ANN", "CSQ")):
+                validation["mutation_annotated_rows"] += 1
+
             variants.append({
                 "chrom": chrom,
                 "pos": pos,
@@ -81,6 +115,16 @@ class VariantAnnotationEngine:
     @staticmethod
     # Queries the SQLite clinical knowledge base for matching evidence by gene and mutation
     def match_clinical_evidence(gene: str, mutation: str, cursor=None):
+        # Normalize incoming mutation so p.V600E / c.1799T>A etc. hit the KB
+        _m = mutation.strip()
+        if _m.upper().startswith("P."):
+            _m = _m[2:]
+        elif _m.upper().startswith("C."):
+            _m = _m[2:]
+        if ":" in _m:
+            _m = _m.split(":", 1)[-1]
+        mutation = _m.strip()
+
         owns_connection = cursor is None
         conn = sqlite3.connect(DB_PATH) if owns_connection else None
         cursor = conn.cursor() if owns_connection else cursor

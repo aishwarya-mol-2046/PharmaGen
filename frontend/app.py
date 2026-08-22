@@ -11,7 +11,6 @@ from html import escape
 API_CANDIDATES = [
     os.environ.get("PHARMAGEN_API_URL", "").strip(),
     "http://127.0.0.1:8000",
-    "http://127.0.0.1:8011",
 ]
 API_CANDIDATES = [url.rstrip("/") for url in API_CANDIDATES if url]
 
@@ -374,9 +373,8 @@ if current_content:
             net.add_edge(mut_id, disease_id, color="#527b78")
             net.add_edge(disease_id, drug_id, color="#8ce0c3", width=3)
 
-            net.save_graph("frontend_graph.html")
-            with open("frontend_graph.html", "r", encoding="utf-8") as f:
-                html_data = f.read()
+            # In-memory HTML — no file write, neat and container-safe
+            html_data = net.generate_html(notebook=False)
             components.html(html_data, height=600)
 
     else:
