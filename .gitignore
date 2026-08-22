@@ -1,15 +1,59 @@
-
+# Python
 __pycache__/
-*.pyc
-venv/
-.env
+*.py[cod]
+*$py.class
+*.so
+.Python
+*.egg-info/
+.eggs/
+build/
+dist/
 
-# Large Raw Datasets (Keep code light!)
+# Virtual environments
+.venv/
+venv/
+env/
+
+# Environment variables
+.env
+.env.local
+.env.*.local
+
+# IDE
+.vscode/*
+!.vscode/settings.json
+!.vscode/extensions.json
+.idea/
+*.swp
+*.swo
+*~
+
+# Testing
+.pytest_cache/
+.coverage
+htmlcov/
+.mypy_cache/
+.ruff_cache/
+
+# Project specific
+backend/data/raw/*.db
+backend/data/raw/*.tsv
+backend/data/raw/*.txt
+frontend_graph.html
+
+# Large data files
+*.vcf
+!tests/unmatched_test.vcf
+*.csv
+!sample_indigen_like.csv
+!test_patient.csv
 *.tar.gz
 *.zip
-backend/data/raw/variant_summary.txt
-*.vcf
-*.tar.gz
-*.tsv
-*.txt
-backend/data/raw/*
+
+# OS
+.DS_Store
+Thumbs.db
+
+# Logs
+*.log
+logs/
