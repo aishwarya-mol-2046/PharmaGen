@@ -539,7 +539,6 @@ if current_content:
     else:
         st.error(f"API Error {response.status_code}: {response.text}")
 else:
-<<<<<<< HEAD
     st.markdown('<div class="status-strip"><strong>Awaiting genomic input</strong> &nbsp; Upload a VCF from the sidebar or click a demonstration dataset below to view clinical evidence.</div>', unsafe_allow_html=True)
     
     col_demo_main1, col_demo_main2 = st.columns(2)
@@ -565,8 +564,18 @@ else:
                 st.session_state.pop("analysis_data", None)
                 st.rerun()
 
-    st.markdown('<div class="section-label">Unified Clinical Evidence Base (Oncology & Pharmacogenomics)</div>', unsafe_allow_html=True)
     intro = st.columns(3)
-    intro[0].markdown("**01 / Somatic Precision Oncology (CIViC & OncoKB)**\n\nDirect evidence connecting tumor mutations (*BRAF, EGFR, KRAS, TP53, PIK3CA*) to targeted therapies and clinical trials.")
-    intro[1].markdown("**02 / Germline Pharmacogenomics (PharmGKB & CPIC)**\n\nDrug safety, metabolism enzyme risks, and hospital dosing actions (*CYP2C19, VKORC1, DPYD, TPMT, SLCO1B1, HLA-B*).")
     intro[2].markdown("**03 / Explainable Knowledge Graph**\n\nInteractive visual graph connecting patient biomarker $\\rightarrow$ disease phenotype $\\rightarrow$ drug therapy $\\rightarrow$ evidence tier.")
+    st.markdown(
+        '<div class="status-strip"><strong>Awaiting genomic input</strong> &nbsp; Upload a VCF from the analysis workspace to open the evidence console.</div>',
+        unsafe_allow_html=True,
+    )
+    st.markdown(
+    )
+    intro = st.columns(3)
+    intro[0].markdown(
+    )
+    intro[1].markdown(
+    )
+    intro[2].markdown(
+    )
