@@ -14,6 +14,27 @@ PHARMGKB_URLS = [
     "https://api.pharmgkb.org/v1/download/file/data/clinicalAnnotations.zip",
 ]
 
+VIP_PGX_MAPPING = {
+    ("CYP2C19", "*2"): "RS4244285",
+    ("CYP2C19", "*3"): "RS4986893",
+    ("CYP2C19", "*17"): "RS12248560",
+    ("CYP2D6", "*4"): "RS3892097",
+    ("CYP2D6", "*10"): "RS1065852",
+    ("CYP2D6", "*6"): "RS5030655",
+    ("CYP2C9", "*2"): "RS1799853",
+    ("CYP2C9", "*3"): "RS1057910",
+    ("DPYD", "*2A"): "RS3918290",
+    ("DPYD", "*13"): "RS55886062",
+    ("VKORC1", "-1639G>A"): "RS9923231",
+    ("TPMT", "*3A"): "RS1800462",
+    ("TPMT", "*3C"): "RS1800460",
+    ("SLCO1B1", "*5"): "RS4149056",
+    ("HLA-B", "*57:01"): "HLA-B*57:01",
+    ("HLA-B", "*58:01"): "HLA-B*58:01",
+    ("HLA-B", "*15:02"): "HLA-B*15:02",
+    ("UGT1A1", "*28"): "RS8175347",
+}
+
 
 def _get_connection():
     os.makedirs(os.path.dirname(DB_PATH), exist_ok=True)
@@ -30,6 +51,13 @@ def _get_connection():
             PRIMARY KEY (gene, mutation, therapy, disease, source)
         )
     """)
+    # Lightweight migration: check and add extra columns on the fly without dropping data
+    cursor.execute("PRAGMA table_info(variant_evidence)")
+    existing_cols = {col[1].lower() for col in cursor.fetchall()}
+    for col_name, col_type in [("adverse_effects", "TEXT"), ("phenotype_category", "TEXT")]:
+        if col_name not in existing_cols:
+            cursor.execute(f"ALTER TABLE variant_evidence ADD COLUMN {col_name} {col_type}")
+
     cursor.execute("CREATE INDEX IF NOT EXISTS idx_var_ev_gene_mut ON variant_evidence (gene, mutation)")
     cursor.execute("CREATE INDEX IF NOT EXISTS idx_var_ev_gene ON variant_evidence (gene)")
     conn.commit()
@@ -218,10 +246,92 @@ def init_pharmgkb_db(conn=None, zip_path=None):
         conn.close()
 
 
+def init_cpic_guidelines_db(conn=None):
+    """Fetch official CPIC (Clinical Pharmacogenetics Implementation Consortium) Dosing Guidelines."""
+    owns_conn = conn is None
+    conn = _get_connection() if owns_conn else conn
+    cursor = conn.cursor()
+
+    print("Fetching official CPIC Clinical Dosing Guidelines via REST API...")
+    try:
+        drugs_res = requests.get("https://api.cpicpgx.org/v1/drug", timeout=15)
+        drugs_map = {d["drugid"]: d["name"] for d in drugs_res.json()} if drugs_res.status_code == 200 else {}
+
+        recs_res = requests.get("https://api.cpicpgx.org/v1/recommendation", timeout=25)
+        if recs_res.status_code != 200:
+            raise RuntimeError(f"CPIC API returned status {recs_res.status_code}")
+
+        recs = recs_res.json()
+        records = []
+
+        for r in recs:
+            drug_name = drugs_map.get(r.get("drugid"), "").strip()
+            if not drug_name:
+                continue
+
+            lookup_keys = r.get("lookupkey", {})
+            implications = r.get("implications", {})
+            rec_text = r.get("drugrecommendation", "").strip()
+            classification = r.get("classification", "Strong")
+            tier = f"CPIC Level A ({classification})" if classification in ("Strong", "Moderate") else f"CPIC Level B ({classification})"
+
+            if not rec_text or rec_text.lower().startswith("no recommendation"):
+                continue
+
+            for gene, key_val in lookup_keys.items():
+                gene_clean = gene.strip().upper()
+                implication_text = implications.get(gene, "")
+                disease_desc = f"{implication_text}: {rec_text}" if implication_text else rec_text
+
+                raw_tokens = []
+                if "/" in str(key_val):
+                    raw_tokens.extend([t.strip().upper() for t in str(key_val).split("/") if t.strip()])
+                else:
+                    match = re.search(r"(\*[0-9A-Za-z_:]+|-[0-9]+[A-Za-z]?>[A-Za-z]|RS[0-9]+)", str(key_val), re.IGNORECASE)
+                    if match:
+                        raw_tokens.append(match.group(1).upper())
+                    else:
+                        raw_tokens.append(str(key_val).strip().upper())
+
+                all_variants = set(raw_tokens)
+                for tok in raw_tokens:
+                    alias = VIP_PGX_MAPPING.get((gene_clean, tok))
+                    if alias:
+                        all_variants.add(alias.upper())
+
+                for var in all_variants:
+                    if not var or var.lower() == "none" or var == "*1":
+                        continue
+                    records.append((
+                        gene_clean,
+                        var,
+                        disease_desc,
+                        drug_name,
+                        tier,
+                        "CPIC Guidelines",
+                    ))
+
+        if records:
+            cursor.executemany("""
+                INSERT OR REPLACE INTO variant_evidence 
+                (gene, mutation, disease, therapy, evidence_tier, source) 
+                VALUES (?, ?, ?, ?, ?, ?)
+            """, records)
+            conn.commit()
+            print(f"Successfully loaded {len(records)} official clinical dosing records from CPIC into SQLite!")
+
+    except Exception as e:
+        print(f"CPIC fetch warning ({e}). Ingestion skipped or fallback used.")
+
+    if owns_conn:
+        conn.close()
+
+
 def bootstrap_all():
     conn = _get_connection()
     init_real_civic_db(conn=conn)
     init_pharmgkb_db(conn=conn)
+    init_cpic_guidelines_db(conn=conn)
     conn.close()
 
 

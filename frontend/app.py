@@ -86,8 +86,29 @@ st.markdown('<div class="hero-rule"></div>', unsafe_allow_html=True)
 st.markdown('<div class="sub-text">Translate genomic findings into an auditable treatment evidence trail, from uploaded VCF to disease context and targeted therapy.</div>', unsafe_allow_html=True)
 
 st.sidebar.markdown('<div class="sidebar-title">Analysis workspace</div>', unsafe_allow_html=True)
-st.sidebar.markdown('<div class="sidebar-copy">Upload a VCF to trace variants through the local clinical evidence base.</div>', unsafe_allow_html=True)
 uploaded_file = st.sidebar.file_uploader("Upload genomics VCF", type=["vcf", "txt"])
+
+col_demo1, col_demo2 = st.sidebar.columns(2)
+if col_demo1.button("🧪 Real PGx (200)", use_container_width=True, help="Load 200 real clinical cohort PGx variants"):
+    sample_path = Path(__file__).resolve().parents[1] / "real_clinical_pgx_patient_200.vcf"
+    if sample_path.exists():
+        demo_bytes = sample_path.read_bytes()
+        st.session_state["uploaded_filename"] = "real_clinical_pgx_patient_200.vcf"
+        st.session_state["uploaded_content"] = demo_bytes
+        st.session_state["uploaded_hash"] = hashlib.sha256(demo_bytes).hexdigest()
+        st.session_state.pop("analysis_data", None)
+        st.rerun()
+
+if col_demo2.button("🔬 1,000 Vars", use_container_width=True, help="Load 1,000 clinical benchmark variants"):
+    sample_path = Path(__file__).resolve().parents[1] / "demo_patient_1000.vcf"
+    if sample_path.exists():
+        demo_bytes = sample_path.read_bytes()
+        st.session_state["uploaded_filename"] = "demo_patient_1000.vcf"
+        st.session_state["uploaded_content"] = demo_bytes
+        st.session_state["uploaded_hash"] = hashlib.sha256(demo_bytes).hexdigest()
+        st.session_state.pop("analysis_data", None)
+        st.rerun()
+
 if uploaded_file:
     current_content = uploaded_file.getvalue()
     current_hash = hashlib.sha256(current_content).hexdigest()
@@ -180,12 +201,12 @@ if current_content:
         st.sidebar.markdown("---")
         st.sidebar.subheader("Filter Clinical Matrix")
         all_levels = df["Evidence Level"].unique().tolist() if not df.empty else []
-        default_levels = [lvl for lvl in all_levels if "Level A" in lvl or "Level B" in lvl]
+        default_levels = all_levels
         
         selected_levels = st.sidebar.multiselect(
             "Evidence Tiers", 
             options=all_levels, 
-            default=default_levels if default_levels else all_levels
+            default=default_levels
         )
         
         tier_filtered_df = df[df["Evidence Level"].isin(selected_levels)] if selected_levels else df
@@ -195,9 +216,9 @@ if current_content:
         st.markdown('<div class="section-label">Evidence overview</div>', unsafe_allow_html=True)
         c1, c2, c3, c4 = st.columns(4)
         c1.metric("Variants reviewed", f"{data['variants_count']:,}")
-        c2.metric("Exact CIViC matches", f"{data.get('exact_matches', 0):,}")
+        c2.metric("Exact Clinical Matches", f"{data.get('exact_matches', 0):,}")
         high_confidence_exact = df[
-            df["Evidence Level"].str.contains("Level A|Level B", na=False)
+            df["Evidence Level"].str.contains("Level A|Level B|Level 1A|Level 1B|Level 2A", na=False)
             & df["Match Type"].eq("exact")
         ] if not df.empty else df
         c3.metric("High-confidence exact", f"{len(high_confidence_exact):,}")
@@ -382,9 +403,33 @@ if current_content:
     else:
         st.error(f"API Error {response.status_code}: {response.text}")
 else:
-    st.markdown('<div class="status-strip"><strong>Awaiting genomic input</strong> &nbsp; Upload a VCF from the analysis workspace to open the evidence console.</div>', unsafe_allow_html=True)
-    st.markdown('<div class="section-label">What the console surfaces</div>', unsafe_allow_html=True)
+    st.markdown('<div class="status-strip"><strong>Awaiting genomic input</strong> &nbsp; Upload a VCF from the sidebar or click a demonstration dataset below to view clinical evidence.</div>', unsafe_allow_html=True)
+    
+    col_demo_main1, col_demo_main2 = st.columns(2)
+    with col_demo_main1:
+        if st.button("🧪 Load Real Clinical PGx Cohort Dataset (200 Variants)", use_container_width=True):
+            sample_path = Path(__file__).resolve().parents[1] / "real_clinical_pgx_patient_200.vcf"
+            if sample_path.exists():
+                demo_bytes = sample_path.read_bytes()
+                st.session_state["uploaded_filename"] = "real_clinical_pgx_patient_200.vcf"
+                st.session_state["uploaded_content"] = demo_bytes
+                st.session_state["uploaded_hash"] = hashlib.sha256(demo_bytes).hexdigest()
+                st.session_state.pop("analysis_data", None)
+                st.rerun()
+
+    with col_demo_main2:
+        if st.button("🔬 Load 1,000-Variant Clinical Benchmark VCF", use_container_width=True):
+            sample_path = Path(__file__).resolve().parents[1] / "demo_patient_1000.vcf"
+            if sample_path.exists():
+                demo_bytes = sample_path.read_bytes()
+                st.session_state["uploaded_filename"] = "demo_patient_1000.vcf"
+                st.session_state["uploaded_content"] = demo_bytes
+                st.session_state["uploaded_hash"] = hashlib.sha256(demo_bytes).hexdigest()
+                st.session_state.pop("analysis_data", None)
+                st.rerun()
+
+    st.markdown('<div class="section-label">Unified Clinical Evidence Base (13,184 Records)</div>', unsafe_allow_html=True)
     intro = st.columns(3)
-    intro[0].markdown("**01 / Variant scan**\n\nExtract gene and mutation signals from the uploaded VCF.")
-    intro[1].markdown("**02 / Evidence match**\n\nConnect findings to disease, therapy, evidence tier, and source.")
-    intro[2].markdown("**03 / Explainable graph**\n\nFollow the clinical reasoning path from biomarker to treatment.")
+    intro[0].markdown("**01 / Somatic Precision Oncology (CIViC)**\n\nDirect evidence connecting tumor mutations (*BRAF, EGFR, KRAS, TP53, PIK3CA*) to targeted therapies and clinical trials.")
+    intro[1].markdown("**02 / Germline Pharmacogenomics (PharmGKB)**\n\nDrug safety, metabolism enzyme risks, and toxicity markers (*CYP2C19, VKORC1, DPYD, TPMT, SLCO1B1, HLA-B*).")
+    intro[2].markdown("**03 / Explainable Knowledge Graph**\n\nInteractive visual graph connecting patient biomarker $\\rightarrow$ disease phenotype $\\rightarrow$ drug therapy $\\rightarrow$ evidence tier.")
