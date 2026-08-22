@@ -240,9 +240,21 @@ if current_content:
             default=default_levels if default_levels else all_levels,
         )
 
+        all_sources = df["Source"].unique().tolist() if not df.empty else []
+        selected_sources = st.sidebar.multiselect(
+            "Evidence Sources",
+            options=all_sources,
+            default=all_sources,
+        )
+
         tier_filtered_df = df[df["Evidence Level"].isin(selected_levels)] if selected_levels else df
-        filtered_df = tier_filtered_df[tier_filtered_df["Match Type"] == "exact"]
-        contextual_df = tier_filtered_df[tier_filtered_df["Match Type"] == "gene_context"]
+        source_filtered_df = (
+            tier_filtered_df[tier_filtered_df["Source"].isin(selected_sources)]
+            if selected_sources
+            else tier_filtered_df
+        )
+        filtered_df = source_filtered_df[source_filtered_df["Match Type"] == "exact"]
+        contextual_df = source_filtered_df[source_filtered_df["Match Type"] == "gene_context"]
         filtered_cohort_df = _aggregate_cohort(filtered_df)
         contextual_cohort_df = _aggregate_cohort(contextual_df)
 
@@ -271,6 +283,21 @@ if current_content:
             f"`{data.get('contextual_matches', 0):,}` gene-context records · "
             f"`{data.get('no_matches', 0):,}` unmatched variants",
         )
+
+        if patients_observed > 1 and not df.empty:
+            with st.expander("Cohort snapshot — most frequently altered genes"):
+                top_genes = (
+                    df.drop_duplicates(subset=["Gene", "Mutation"])
+                    .groupby("Gene")
+                    .size()
+                    .sort_values(ascending=False)
+                    .head(12)
+                )
+                st.bar_chart(top_genes)
+                st.caption(
+                    "Unique variant count per gene across the uploaded cohort. "
+                    "Frequently altered genes are common drivers (e.g., TP53, PIK3CA) or hotspots."
+                )
 
         validation = data.get("input_validation", {})
         with st.expander("Input quality and evidence policy"):
