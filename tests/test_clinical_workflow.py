@@ -8,9 +8,13 @@ FIXTURES_DIR = Path(__file__).parent
 
 
 class ClinicalWorkflowTests(unittest.TestCase):
-
     def test_exact_match(self):
         matches = VariantAnnotationEngine.match_clinical_evidence("EGFR", "L858R")
+        self.assertTrue(matches)
+        self.assertTrue(any(match["match_type"] == "exact" for match in matches))
+
+    def test_prefix_stripping_exact_match(self):
+        matches = VariantAnnotationEngine.match_clinical_evidence("EGFR", "p.L858R")
         self.assertTrue(matches)
         self.assertTrue(any(match["match_type"] == "exact" for match in matches))
 

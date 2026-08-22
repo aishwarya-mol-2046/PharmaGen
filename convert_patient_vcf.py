@@ -18,7 +18,6 @@ import random
 import sqlite3
 from pathlib import Path
 
-
 DB_PATH = Path(__file__).resolve().parent / "backend" / "data" / "raw" / "clinical_kb.db"
 
 
@@ -81,20 +80,19 @@ def vcf_to_patient_csv(input_vcf: str, output_csv: str) -> None:
 
             gene = (info.get("GENE") or info.get("SYMBOL") or "UNKNOWN").strip()
             mutation = (
-                info.get("MUT")
-                or info.get("HGVSP")
-                or info.get("HGVS_P")
-                or f"{ref}>{alt}"
+                info.get("MUT") or info.get("HGVSP") or info.get("HGVS_P") or f"{ref}>{alt}"
             ).strip()
 
-            rows.append({
-                "CHROM": chrom,
-                "POS": pos,
-                "REF": ref,
-                "ALT": alt,
-                "GENE": gene,
-                "MUT": mutation,
-            })
+            rows.append(
+                {
+                    "CHROM": chrom,
+                    "POS": pos,
+                    "REF": ref,
+                    "ALT": alt,
+                    "GENE": gene,
+                    "MUT": mutation,
+                }
+            )
 
     with out_path.open("w", encoding="utf-8", newline="") as out:
         writer = csv.DictWriter(out, fieldnames=["CHROM", "POS", "REF", "ALT", "GENE", "MUT"])
@@ -110,12 +108,16 @@ def generate_demo_patient_vcf(output_vcf: str, row_count: int = 100) -> None:
 
     conn = sqlite3.connect(DB_PATH)
     cur = conn.cursor()
-    cur.execute("SELECT DISTINCT gene, mutation FROM variant_evidence WHERE gene IS NOT NULL AND mutation IS NOT NULL ORDER BY gene, mutation")
+    cur.execute(
+        "SELECT DISTINCT gene, mutation FROM variant_evidence WHERE gene IS NOT NULL AND mutation IS NOT NULL ORDER BY gene, mutation"
+    )
     rows = cur.fetchall()
     conn.close()
 
     if len(rows) < row_count:
-        raise ValueError(f"Database has only {len(rows)} distinct gene/mutation pairs; requested {row_count} rows.")
+        raise ValueError(
+            f"Database has only {len(rows)} distinct gene/mutation pairs; requested {row_count} rows."
+        )
 
     out_path = Path(output_vcf)
     with out_path.open("w", encoding="utf-8", newline="") as out:
@@ -194,7 +196,9 @@ def generate_synthetic_clinical_vcf(output_vcf: str, row_count: int = 1000, seed
     print(f"Generated {row_count} clinically grounded synthetic rows at {out_path} (seed={seed})")
 
 
-def convert_indigen_to_patient_vcf(input_vcf: str, output_vcf: str, max_rows: int | None = None) -> None:
+def convert_indigen_to_patient_vcf(
+    input_vcf: str, output_vcf: str, max_rows: int | None = None
+) -> None:
     """Convert the raw IndiGen non-annotated VCF into the app-readable format.
 
     Since the raw file has no GENE/MUT annotation, this keeps every variant row but
@@ -205,7 +209,10 @@ def convert_indigen_to_patient_vcf(input_vcf: str, output_vcf: str, max_rows: in
     out_path = Path(output_vcf)
 
     rows_written = 0
-    with in_path.open("r", encoding="utf-8", errors="ignore") as src, out_path.open("w", encoding="utf-8", newline="") as dst:
+    with (
+        in_path.open("r", encoding="utf-8", errors="ignore") as src,
+        out_path.open("w", encoding="utf-8", newline="") as dst,
+    ):
         dst.write("##fileformat=VCFv4.2\n")
         dst.write("#CHROM\tPOS\tID\tREF\tALT\tQUAL\tFILTER\tINFO\n")
 
@@ -231,17 +238,48 @@ def convert_indigen_to_patient_vcf(input_vcf: str, output_vcf: str, max_rows: in
 
 
 if __name__ == "__main__":
-    parser = argparse.ArgumentParser(description="Convert patient data between CSV and the VCF format used by PharmaGen.")
+    parser = argparse.ArgumentParser(
+        description="Convert patient data between CSV and the VCF format used by PharmaGen."
+    )
     parser.add_argument("input_file", nargs="?", help="Input CSV or VCF file")
     parser.add_argument("output_file", nargs="?", help="Output CSV or VCF file")
-    parser.add_argument("--output-file", dest="output_file_flag", help="Output path when using --generate-demo")
-    parser.add_argument("--generate-demo", action="store_true", help="Create a valid patient VCF with N rows using real gene/mutation pairs from the clinical database")
-    parser.add_argument("--demo-count", type=int, default=100, help="Number of rows to generate when --generate-demo is used")
-    parser.add_argument("--synthetic-clinical", action="store_true", help="Create labelled synthetic rows from local clinical evidence pairs")
-    parser.add_argument("--synthetic-count", type=int, default=1000, help="Number of clinically grounded synthetic rows to generate")
+    parser.add_argument(
+        "--output-file", dest="output_file_flag", help="Output path when using --generate-demo"
+    )
+    parser.add_argument(
+        "--generate-demo",
+        action="store_true",
+        help="Create a valid patient VCF with N rows using real gene/mutation pairs from the clinical database",
+    )
+    parser.add_argument(
+        "--demo-count",
+        type=int,
+        default=100,
+        help="Number of rows to generate when --generate-demo is used",
+    )
+    parser.add_argument(
+        "--synthetic-clinical",
+        action="store_true",
+        help="Create labelled synthetic rows from local clinical evidence pairs",
+    )
+    parser.add_argument(
+        "--synthetic-count",
+        type=int,
+        default=1000,
+        help="Number of clinically grounded synthetic rows to generate",
+    )
     parser.add_argument("--seed", type=int, default=42, help="Seed for reproducible synthetic data")
-    parser.add_argument("--indigen", action="store_true", help="Convert every row of a raw IndiGen VCF into app-readable GENE/MUT format using fallback values")
-    parser.add_argument("--max-rows", type=int, default=None, help="Optional cap for raw IndiGen conversion; useful for testing before full conversion")
+    parser.add_argument(
+        "--indigen",
+        action="store_true",
+        help="Convert every row of a raw IndiGen VCF into app-readable GENE/MUT format using fallback values",
+    )
+    parser.add_argument(
+        "--max-rows",
+        type=int,
+        default=None,
+        help="Optional cap for raw IndiGen conversion; useful for testing before full conversion",
+    )
     args = parser.parse_args()
 
     out_path = args.output_file or args.output_file_flag
@@ -265,7 +303,9 @@ if __name__ == "__main__":
         raise SystemExit(0)
 
     if not args.input_file or not out_path:
-        raise ValueError("Input and output files are required unless --generate-demo or --indigen is used.")
+        raise ValueError(
+            "Input and output files are required unless --generate-demo or --indigen is used."
+        )
 
     in_suffix = Path(args.input_file).suffix.lower()
     out_suffix = Path(out_path).suffix.lower()
