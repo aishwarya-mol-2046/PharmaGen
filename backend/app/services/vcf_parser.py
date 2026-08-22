@@ -1,3 +1,4 @@
+import re
 import sqlite3
 from pathlib import Path
 from typing import Any
@@ -8,8 +9,15 @@ HGVS_MAP = {
     "Ala": "A", "Arg": "R", "Asn": "N", "Asp": "D", "Cys": "C",
     "Glu": "E", "Gln": "Q", "Gly": "G", "His": "H", "Ile": "I",
     "Leu": "L", "Lys": "K", "Met": "M", "Phe": "F", "Pro": "P",
-    "Ser": "S", "Thr": "T", "Trp": "W", "Tyr": "Y", "Val": "V"
+    "Ser": "S", "Thr": "T", "Trp": "W", "Tyr": "Y", "Val": "V",
 }
+
+# Only convert a 3-letter amino-acid code when it is followed by a position
+# digit or end-of-string (p.Val600Glu -> V600E), never inside other words.
+# Lookbehind excludes letters so codes after positions ("600Glu") still match.
+_AA3_RE = re.compile(
+    r"(?<![A-Za-z])(Ala|Arg|Asn|Asp|Cys|Gln|Glu|Gly|His|Ile|Leu|Lys|Met|Phe|Pro|Ser|Thr|Trp|Tyr|Val)(?=\d|$)"
+)
 
 RSID_MAP = {
     "rs4244285": ("CYP2C19", "*2"),
@@ -107,10 +115,8 @@ class VariantAnnotationEngine:
             if mut_norm.upper().startswith("P.") or mut_norm.upper().startswith("C."):
                 mut_norm = mut_norm[2:]
 
-            # 3-Letter to 1-Letter translation
-            for three_let, one_let in HGVS_MAP.items():
-                if three_let in mut_norm:
-                    mut_norm = mut_norm.replace(three_let, one_let)
+            # 3-Letter to 1-Letter translation (position-anchored, regex-safe)
+            mut_norm = _AA3_RE.sub(lambda m: HGVS_MAP[m.group(1)], mut_norm)
 
             mutation = mut_norm
 
