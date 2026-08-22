@@ -5,9 +5,9 @@ from typing import Any
 DB_PATH = str(Path(__file__).resolve().parents[2] / "data" / "raw" / "clinical_kb.db")
 
 HGVS_MAP = {
-    "Ala": "A", "Arg": "R", "Asn": "N", "Asp": "D", "Cys": "C", 
-    "Glu": "E", "Gln": "Q", "Gly": "G", "His": "H", "Ile": "I", 
-    "Leu": "L", "Lys": "K", "Met": "M", "Phe": "F", "Pro": "P", 
+    "Ala": "A", "Arg": "R", "Asn": "N", "Asp": "D", "Cys": "C",
+    "Glu": "E", "Gln": "Q", "Gly": "G", "His": "H", "Ile": "I",
+    "Leu": "L", "Lys": "K", "Met": "M", "Phe": "F", "Pro": "P",
     "Ser": "S", "Thr": "T", "Trp": "W", "Tyr": "Y", "Val": "V"
 }
 
@@ -37,6 +37,8 @@ class VariantAnnotationEngine:
             "annotation_coverage_percent": 0.0,
         }
         seen_variants = set()
+        distinct_combinations = set()
+        observed_samples = set()
 
         for line in file_bytes.decode("utf-8", errors="ignore").splitlines():
             stripped_line = line.strip()
@@ -96,26 +98,34 @@ class VariantAnnotationEngine:
                 mutation = f"{ref}>{alt}"
 
             # Normalize HGVSp-like prefix so p.V600E matches V600E in KB
-            mut_norm = mutation.strip()
-            
+            mut_norm = mutation.strip().replace(" ", "")
+
             # Transcript prefix stripping (e.g. ENSP00000288602:p.Val600Glu)
             if ":" in mut_norm:
                 mut_norm = mut_norm.split(":", 1)[-1]
-                
+
             if mut_norm.upper().startswith("P.") or mut_norm.upper().startswith("C."):
                 mut_norm = mut_norm[2:]
-            
+
             # 3-Letter to 1-Letter translation
             for three_let, one_let in HGVS_MAP.items():
                 if three_let in mut_norm:
                     mut_norm = mut_norm.replace(three_let, one_let)
-                    
+
             mutation = mut_norm
 
-            variant_key = (chrom, pos, ref, alt, gene.upper(), mutation.upper())
+            # Cohort semantics: the same hotspot in DIFFERENT patients is a distinct
+            # instance (kept), not a duplicate. Only the same patient repeating the
+            # identical variant row is a true duplicate (skipped, counted).
+            sample_id = info_dict.get("SAMPLE", "")
+            if sample_id:
+                observed_samples.add(sample_id)
+            variant_key = (chrom, pos, ref, alt, gene.upper(), mutation.upper(), sample_id)
             if variant_key in seen_variants:
                 validation["duplicate_rows"] += 1
+                continue
             seen_variants.add(variant_key)
+            distinct_combinations.add((chrom, pos, ref, alt, gene.upper(), mutation.upper()))
 
             if gene != "UNKNOWN":
                 validation["gene_annotated_rows"] += 1
@@ -136,6 +146,9 @@ class VariantAnnotationEngine:
             if validation["parsed_rows"]
             else 0.0
         )
+        # Cohort stats (additive keys; single-patient VCFs report patients_observed=0/1)
+        validation["patients_observed"] = len(observed_samples)
+        validation["unique_variant_combinations"] = len(distinct_combinations)
         return variants, validation
 
     @staticmethod
@@ -148,7 +161,7 @@ class VariantAnnotationEngine:
     # Queries the SQLite clinical knowledge base for matching evidence by gene and mutation
     def match_clinical_evidence(gene: str, mutation: str, cursor=None):
         # Normalize incoming mutation so p.V600E / c.1799T>A etc. hit the KB
-        _m = mutation.strip()
+        _m = mutation.strip().replace(" ", "")
         if _m.upper().startswith("P.") or _m.upper().startswith("C."):
             _m = _m[2:]
         if ":" in _m:

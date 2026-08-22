@@ -211,6 +211,23 @@ if current_content:
         ]
         df = pd.DataFrame(flat_rows, columns=matrix_columns)
 
+        # Cohort aggregation: one row per unique evidence path + patient count.
+        # The same hotspot appearing in N patients collapses to a single row with Patients=N.
+        def _aggregate_cohort(frame: pd.DataFrame) -> pd.DataFrame:
+            if frame.empty:
+                return frame
+            aggregated = (
+                frame.groupby(matrix_columns, dropna=False)
+                .size()
+                .reset_index(name="Patients")
+                .sort_values(["Patients", "Gene", "Mutation"], ascending=[False, True, True], kind="stable")
+                .reset_index(drop=True)
+            )
+            return aggregated
+
+        cohort_df = _aggregate_cohort(df)
+        patients_observed = data.get("input_validation", {}).get("patients_observed", 0)
+
         # Sidebar Filter Controls
         st.sidebar.markdown("---")
         st.sidebar.subheader("Filter Clinical Matrix")
@@ -226,10 +243,16 @@ if current_content:
         tier_filtered_df = df[df["Evidence Level"].isin(selected_levels)] if selected_levels else df
         filtered_df = tier_filtered_df[tier_filtered_df["Match Type"] == "exact"]
         contextual_df = tier_filtered_df[tier_filtered_df["Match Type"] == "gene_context"]
+        filtered_cohort_df = _aggregate_cohort(filtered_df)
+        contextual_cohort_df = _aggregate_cohort(contextual_df)
 
         st.markdown('<div class="section-label">Evidence overview</div>', unsafe_allow_html=True)
         c1, c2, c3, c4 = st.columns(4)
-        c1.metric("Variants reviewed", f"{data['variants_count']:,}")
+        c1.metric(
+            "Variants reviewed",
+            f"{data['variants_count']:,}",
+            delta=f"{patients_observed:,} patients" if patients_observed > 1 else None,
+        )
         c2.metric("Exact Clinical Matches", f"{data.get('exact_matches', 0):,}")
         high_confidence_exact = (
             df[
@@ -274,24 +297,24 @@ if current_content:
                 '<div class="evidence-note">Actionable treatment rows require an exact gene-plus-mutation match. Gene-context evidence is kept separate and is not a direct treatment recommendation.</div>',
                 unsafe_allow_html=True,
             )
-            if filtered_df.empty:
+            if filtered_cohort_df.empty:
                 st.info("No exact actionable matches in the selected evidence tiers.")
             else:
-                st.dataframe(filtered_df, use_container_width=True, height=420)
+                st.dataframe(filtered_cohort_df, use_container_width=True, height=420)
 
-            if not contextual_df.empty:
+            if not contextual_cohort_df.empty:
                 with st.expander(
-                    f"View {len(contextual_df):,} gene-context records (not exact matches)"
+                    f"View {len(contextual_cohort_df):,} gene-context records (not exact matches)"
                 ):
                     st.warning(
                         "These records come from other mutations in the same gene. They provide context only and must not be interpreted as a treatment recommendation for the uploaded mutation."
                     )
-                    st.dataframe(contextual_df, use_container_width=True, height=260)
+                    st.dataframe(contextual_cohort_df, use_container_width=True, height=260)
 
             download_col, report_col = st.columns(2)
             download_col.download_button(
                 "Download filtered matrix",
-                filtered_df.to_csv(index=False).encode("utf-8"),
+                filtered_cohort_df.to_csv(index=False).encode("utf-8"),
                 file_name="pharmagen_evidence_matrix.csv",
                 mime="text/csv",
                 use_container_width=True,
