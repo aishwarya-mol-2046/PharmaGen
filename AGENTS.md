@@ -2,7 +2,7 @@
 
 ## Project Overview
 
-Precision oncology platform: FastAPI backend + Streamlit frontend. Ingests VCF files, matches variants against a CIViC-derived SQLite knowledge base, and surfaces clinical evidence via an interactive knowledge graph.
+Precision oncology platform: FastAPI backend + Streamlit frontend. Ingests VCF files, matches variants against a hybrid CIViC + OncoKB SQLite knowledge base, and surfaces clinical evidence via an interactive knowledge graph.
 
 ## Directory Boundaries
 
@@ -14,12 +14,13 @@ pharmagen/
 │   │   ├── vcf_parser.py    # VCF parsing + evidence matching engine
 │   │   ├── graph_engine.py  # PyVis knowledge graph generation
 │   │   ├── report_generator.py  # HTML clinical report builder
+│   │   ├── pdf_generator.py # PDF clinical report builder (ReportLab)
 │   │   └── ai_layer.py      # AI review (local rules + LLM fallback)
-│   └── db/
-│       └── bootstrap.py     # SQLite init from CIViC TSV
+│   └── db/bootstrap.py      # SQLite KB init: CIViC nightly TSV + OncoKB
+├── backend/data/seed/oncokb_seed.csv  # Committed offline OncoKB panel
 ├── frontend/app.py          # Streamlit UI — single-file frontend
 ├── convert_patient_vcf.py   # CLI: CSV↔VCF + synthetic data generator
-├── tests/                   # unittest suites
+├── tests/                   # unittest-style suites, run via pytest
 ├── run.sh / run.ps1         # Launch both services
 └── .env.example             # Copy to .env, add GROQ_API_KEY
 ```
@@ -29,43 +30,37 @@ pharmagen/
 ## CLI Commands
 
 ```bash
-# Quick start (recommended)
-make install-dev   # Install dependencies + pre-commit hooks
-make bootstrap     # Populate SQLite KB from CIViC
-make run           # Start backend (:8000) + frontend (:8501)
-
-# Manual setup
-python3 -m venv .venv && source .venv/bin/activate
-pip install -r requirements-dev.txt
-pre-commit install
-python -m backend.app.db.bootstrap
-
-# Development
-make test          # Run all tests
-make test-coverage # Run tests with coverage
-make lint          # Run ruff linter
-make format        # Format code with ruff
-make typecheck     # Run mypy type checker
-make clean         # Clean generated files
-
-# Individual services
-make backend       # Backend only (uvicorn with reload)
-make frontend      # Frontend only (streamlit)
-
-# Data utilities
-python convert_patient_vcf.py patient.csv patient.vcf
-python convert_patient_vcf.py --generate-demo --demo-count 100 demo.vcf
-python convert_patient_vcf.py --synthetic-clinical --synthetic-count 500 synth.vcf
-
-# Docker
-docker-compose up  # Run both services in containers
+source .venv/bin/activate  # always work inside the venv
+make install-dev           # deps + pre-commit hooks (no CI exists; hooks are the gate)
+make bootstrap             # populate SQLite KB — required before analyze/run
+make run                   # backend (:8000) + frontend (:8501)
+make test                  # all tests (pytest)
+make test-coverage         # fails below 70% backend coverage
+make lint | format | typecheck | clean
+python convert_patient_vcf.py --generate-demo --demo-count 50 demo.vcf  # demo VCF
 ```
+
+- Order matters: `/api/v1/analyze` returns **503 until `make bootstrap` has run once**.
+- Single test: `python -m pytest tests/test_clinical_workflow.py::ClinicalWorkflowTests::test_exact_match -v`
+- Import paths differ by context: backend code uses `from app.services...` (uvicorn runs with `--app-dir backend`); tests use `from backend.app.services...`.
+
+## Knowledge Base Behavior
+
+- `bootstrap.py` downloads the live CIViC nightly TSV (~2,500 records); on network failure it inserts a 4-record fallback panel.
+- OncoKB loads **independently of CIViC success**: full GENIE TSV if present (`PHARMAGEN_ONCOKB_FILE`, repo root, or `tests/`), else the committed seed panel. Seed rows use `INSERT OR IGNORE` — they never overwrite existing CIViC evidence for the same key.
+- OncoKB tiers are crosswalked to CIViC tiers: Level 1→A, 2→B, 3A/3B→C, 4→D.
+
+## Parsing Gotchas (vcf_parser.py)
+
+- Duplicate detection is cohort-aware: the dedup key includes INFO `SAMPLE`. The same hotspot in different patients is kept as distinct instances; only same-patient repeats count as `duplicate_rows`.
+- Mutations are normalized before storage and matching: `p.`/`c.` prefixes and transcript names stripped, 3-letter amino acids translated to 1-letter (`p.Val600Glu` → `V600E`). Raw HGVS input therefore hits the KB directly.
+- Extraction order: custom INFO keys (`GENE`/`SYMBOL`, `MUT`/`HGVSP`) → SnpEff `ANN=` → VEP `CSQ=` → known rsID map → `REF>ALT` fallback.
 
 ## Naming Conventions
 
 | Element | Convention | Example |
 |---|---|---|
-| Service classes | PascalCase + `Service`/`Engine` suffix | `VariantAnnotationEngine`, `KnowledgeGraphService` |
+| Service classes | PascalCase + `Service`/`Engine` suffix | `VariantAnnotationEngine`, `PDFReportService` |
 | API endpoints | `/api/v1/<resource>` | `/api/v1/analyze`, `/api/v1/ai-review` |
 | Match types | lowercase snake_case strings | `"exact"`, `"gene_context"`, `"none"` |
 | VCF INFO keys | UPPERCASE | `GENE`, `MUT`, `HGVSP` |
@@ -78,15 +73,18 @@ docker-compose up  # Run both services in containers
 @staticmethod
 def parse_vcf_stream_detailed(file_bytes: bytes) -> tuple[list[dict], dict]:
     # Returns: (variants, validation_report)
-    # variant keys: chrom, pos, gene, mutation (all uppercase gene/mutation)
+    # variant keys: chrom, pos, gene, mutation (gene/mutation uppercase)
     # validation keys: fileformat_header, column_header, data_rows, parsed_rows,
     #                  skipped_rows, gene_annotated_rows, mutation_annotated_rows,
-    #                  duplicate_rows, valid_vcf_headers, annotation_coverage_percent
+    #                  duplicate_rows, valid_vcf_headers, annotation_coverage_percent,
+    #                  patients_observed, unique_variant_combinations
 
 @staticmethod
 def match_clinical_evidence(gene: str, mutation: str, cursor=None) -> list[dict]:
     # Returns list of matches with keys: disease, therapy, evidence_tier, source, match_type
     # match_type ∈ {"exact", "gene_context", "none"}
+    # Pass a shared cursor when matching many variants — /api/v1/analyze queries
+    # once per unique (gene, mutation).
 ```
 
 ### KnowledgeGraphService
@@ -103,15 +101,7 @@ def review_evidence(evidence: dict, context: str) -> dict:
     # Returns: {provider, summary, key_points[], safety_flags[], disclaimer}
 ```
 
-## Banned Patterns
-
-1. **Never** treat `gene_context` matches as actionable treatment — they lack mutation-level evidence.
-2. **Never** call LLM without local fallback — `_llm_review` must degrade to `_local_review` on any failure.
-3. **Never** hardcode DB column names — use `PRAGMA table_info` introspection (see `vcf_parser.py:89`).
-4. **Never** bypass `parse_vcf_stream_detailed` for validation — the quality report is required by the frontend.
-5. **Never** add patient identifiers to logs, AI prompts, or session state.
-6. **Never** commit secrets — `.env` stays local; API keys via `os.environ` only.
-7. **Never** implement a feature without confirming the approach with the user first.
+- `/api/v1/ai-review` returns **400 unless `evidence.match_type == "exact"`**.
 
 ## Evidence Match Policy
 
@@ -121,56 +111,41 @@ def review_evidence(evidence: dict, context: str) -> dict:
 | `gene_context` | Gene only matches | Contextual — separated with warning |
 | `none` | No match | Unmatched — no recommendation |
 
+## Banned Patterns
+
+1. **Never** treat `gene_context` matches as actionable treatment — they lack mutation-level evidence.
+2. **Never** call LLM without local fallback — `_llm_review` must degrade to `_local_review` on any failure.
+3. **Never** hardcode DB column names — use `PRAGMA table_info` introspection (see `match_clinical_evidence` in `vcf_parser.py`).
+4. **Never** bypass `parse_vcf_stream_detailed` for validation — the quality report is required by the frontend.
+5. **Never** add patient identifiers to logs, AI prompts, or session state.
+6. **Never** commit secrets — `.env` stays local; API keys via `os.environ` only.
+7. **Never** implement a feature without confirming the approach with the user first.
+
 ## Environment Variables
 
 | Variable | Purpose | Default |
 |---|---|---|
-| `PHARMAGEN_LLM_PROVIDER` | LLM backend selector | `groq` |
-| `GROQ_API_KEY` | Groq API key | (required for LLM) |
+| `PHARMAGEN_LLM_PROVIDER` | LLM backend selector (`groq` vs any other value → generic OpenAI-compatible path) | `groq` |
+| `GROQ_API_KEY` | Groq API key — missing key silently degrades to local review | (required for LLM) |
 | `GROQ_MODEL` | Model identifier | `llama-3.3-70b-versatile` |
-| `PHARMAGEN_API_URL` | Frontend API override | auto-detect |
+| `GROQ_API_URL` | Groq chat-completions endpoint | official Groq URL |
+| `PHARMAGEN_LLM_API_URL` / `_KEY` / `_MODEL` | Generic provider config, used when provider ≠ `groq` | — |
+| `PHARMAGEN_API_URL` | Frontend API override | auto-detect `http://127.0.0.1:8000` |
+| `PHARMAGEN_ONCOKB_FILE` | Full OncoKB GENIE TSV path | auto-detect repo root / `tests/` |
 
 ## Testing Requirements
 
-- Every new match type must have a corresponding `test_clinical_workflow.py` case.
+- Every new match type must have a corresponding case in `tests/test_clinical_workflow.py`.
 - AI layer tests must verify `safety_flags` content, not just presence.
-- VCF parser tests must validate the full `validation` dict structure.
+- VCF parser tests must validate the full `validation` dict structure, including `patients_observed` and `unique_variant_combinations`.
+- `tests/conftest.py` auto-creates a minimal KB if `clinical_kb.db` is missing, so tests pass without bootstrapping.
 
-## Atomic Task Boundaries
+## Atomic Tasks & Commit Discipline
 
-Keep diffs under 150 lines. Prefer:
-- Single function implementation
-- Single test suite addition
-- Single endpoint modification
+Keep diffs under 150 lines: single function, single test suite, or single endpoint. For multi-file changes, produce an RFC first (template in SKILLS.md).
 
-For multi-file changes, produce an RFC first (see SKILLS.md).
+Commit after every stable stage — passing tests after a feature/fix, a compiling new module, a behavior-preserving refactor, or completed tooling. Before every commit:
 
-## Commit Discipline
-
-**Commit after every stable stage.** A stable stage is defined as:
-- A passing test suite after a feature/fix
-- A new file/module that compiles and runs without errors
-- A refactoring step that preserves existing behavior
-- A configuration or tooling change that completes successfully
-
-**Rules:**
-1. Run `make test` (or relevant verification) before every commit
-2. Commit message must describe what changed and why
-3. One logical change per commit — no mixing unrelated fixes
-4. If tests fail, do not commit (unless reverting to last known good state)
-
-**Example commit workflow:**
-```bash
-# After implementing a feature
-make test          # verify stable
-git add -A
-git commit -m "feat: add PDF export endpoint"
-
-# After fixing a bug
-make test          # verify fix
-make lint          # verify clean
-git add -A
-git commit -m "fix: handle empty VCF INFO field"
-```
-
-**Never leave the repo uncommitted at the end of a session.** Intermediate work should be stashed or committed to a feature branch.
+1. Run `make test` (plus `make lint` for code changes). Never commit red.
+2. One logical change per commit; message describes what changed and why.
+3. Never leave the repo uncommitted at end of session — stash or branch intermediate work.
