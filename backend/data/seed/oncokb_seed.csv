@@ -1,0 +1,28 @@
+gene,mutation,disease,therapy,evidence_tier
+ALK,G1202R,Lung Non-small Cell Carcinoma,Lorlatinib,Level A
+ALK,F1174L,Neuroblastoma,Lorlatinib,Level B
+AKT1,E17K,Breast Cancer,Capivasertib,Level B
+BRCA1,PATHOGENIC,Ovarian Cancer,Olaparib,Level A
+BRCA2,PATHOGENIC,Breast Cancer,Talazoparib,Level A
+PALB2,PATHOGENIC,Pancreatic Adenocarcinoma,Olaparib,Level B
+FGFR3,S249C,Urothelial Bladder Cancer,Erdafitinib,Level B
+IDH1,R132H,Acute Myeloid Leukemia,Ivosidenib,Level A
+IDH2,R140Q,Acute Myeloid Leukemia,Enasidenib,Level A
+KIT,D816V,Systemic Mastocytosis,Avapritinib,Level A
+MET,EXON 14 SKIPPING,Lung Non-small Cell Carcinoma,Capmatinib,Level A
+NTRK1,GENE FUSION,Advanced Solid Tumor,Larotrectinib,Level A
+NTRK2,GENE FUSION,Advanced Solid Tumor,Larotrectinib,Level A
+NTRK3,GENE FUSION,Advanced Solid Tumor,Larotrectinib,Level A
+RET,M918T,Medullary Thyroid Carcinoma,Selpercatinib,Level A
+RET,FUSION,Lung Non-small Cell Carcinoma,Selpercatinib,Level A
+ROS1,G2032R,Lung Non-small Cell Carcinoma,Lorlatinib,Level B
+ROS1,FUSION,Lung Non-small Cell Carcinoma,Entrectinib,Level A
+SMO,W535L,Basal Cell Carcinoma,Vismodegib,Level A
+JAK2,V617F,Myelofibrosis,Ruxolitinib,Level B
+FGFR2,FUSION,Cholangiocarcinoma,Pemigatinib,Level A
+FLT3,ITD,Acute Myeloid Leukemia,Midostaurin,Level A
+FLT3,D835,Acute Myeloid Leukemia,Gilteritinib,Level B
+PDGFRA,D842V,Gastrointestinal Stromal Tumor,Avapritinib,Level A
+VHL,PATHOGENIC,Renal Clear Cell Carcinoma,Belzutifan,Level B
+MSI,HIGH,Advanced Solid Tumor,Pembrolizumab,Level A
+TMB,HIGH,Advanced Solid Tumor,Pembrolizumab,Level B

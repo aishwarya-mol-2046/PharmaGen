@@ -47,6 +47,8 @@ frontend_graph.html
 *.csv
 !sample_indigen_like.csv
 !test_patient.csv
+!backend/data/seed/*.csv
+tests/genie_mskcc_samples_with_2017_oncokb_annotation.txt
 *.tar.gz
 *.zip
 
