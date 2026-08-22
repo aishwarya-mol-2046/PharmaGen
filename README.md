@@ -61,6 +61,22 @@ python convert_patient_vcf.py --generate-demo --demo-count 100 demo.vcf
 python convert_patient_vcf.py --synthetic-clinical --synthetic-count 500 synth.vcf
 ```
 
+### Clinical Knowledge Base (hybrid)
+
+`make bootstrap` builds `backend/data/raw/clinical_kb.db` from multiple sources:
+
+| Source | How it loads | Notes |
+|--------|--------------|-------|
+| **CIViC** | Live nightly TSV download | ~2,500 evidence records; falls back to a 4-record panel offline |
+| **OncoKB** | Full GENIE annotation TSV if available, else committed seed panel | Tier crosswalked: Level 1→A, 2→B, 3A/3B→C, 4→D |
+
+To load the full OncoKB dataset, drop the GENIE annotation file at the repo root
+(`genie_mskcc_samples_with_2017_oncokb_annotation.txt`) or point
+`PHARMAGEN_ONCOKB_FILE` at it. Without it, a curated 27-row seed panel of
+standard-of-care Level A/B pairings ships in-repo (`backend/data/seed/oncokb_seed.csv`)
+so the hybrid pipeline is demonstrable offline. Seed rows never overwrite
+existing CIViC evidence for the same key.
+
 ## Project Structure
 
 ```
@@ -109,3 +125,4 @@ cp .env.example .env
 | `GROQ_API_KEY` | Groq API key | (required for LLM) |
 | `GROQ_MODEL` | Model identifier | `llama-3.3-70b-versatile` |
 | `PHARMAGEN_API_URL` | Frontend API override | auto-detect |
+| `PHARMAGEN_ONCOKB_FILE` | Full OncoKB GENIE TSV path (optional) | repo-root auto-detect |
