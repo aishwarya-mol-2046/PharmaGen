@@ -31,6 +31,8 @@ def _ensure_test_database():
         ("EGFR", "L858R", "Non-Small Cell Lung Cancer", "Osimertinib", "Level A", "CIViC"),
         ("KRAS", "G12C", "Non-Small Cell Lung Cancer", "Sotorasib", "Level A", "CIViC"),
         ("ERBB2", "AMPLIFICATION", "Breast Cancer", "Trastuzumab", "Level A", "CIViC"),
+        ("CYP2C19", "*2", "Poor Clopidogrel Metabolism", "Clopidogrel", "PharmGKB Level 1A", "PharmGKB"),
+        ("DPYD", "*2A", "Severe 5-FU Toxicity", "Fluorouracil", "PharmGKB Level 1A", "PharmGKB"),
     ]
     conn.executemany(
         "INSERT OR REPLACE INTO variant_evidence VALUES (?,?,?,?,?,?)",
@@ -49,6 +51,11 @@ class ClinicalWorkflowTests(unittest.TestCase):
         matches = VariantAnnotationEngine.match_clinical_evidence("EGFR", "L858R")
         self.assertTrue(matches)
         self.assertTrue(any(match["match_type"] == "exact" for match in matches))
+
+    def test_pharmgkb_match(self):
+        matches = VariantAnnotationEngine.match_clinical_evidence("CYP2C19", "*2")
+        self.assertTrue(matches)
+        self.assertTrue(any(match["match_type"] == "exact" and match["source"] == "PharmGKB" for match in matches))
 
     def test_gene_context_is_not_exact(self):
         matches = VariantAnnotationEngine.match_clinical_evidence("EGFR", "NOT_A_REAL_VARIANT")

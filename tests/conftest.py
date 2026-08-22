@@ -31,6 +31,8 @@ def ensure_database():
             ("EGFR", "L858R", "Non-Small Cell Lung Cancer", "Osimertinib", "Level A", "CIViC"),
             ("KRAS", "G12C", "Non-Small Cell Lung Cancer", "Sotorasib", "Level A", "CIViC"),
             ("ERBB2", "AMPLIFICATION", "Breast Cancer", "Trastuzumab", "Level A", "CIViC"),
+            ("CYP2C19", "*2", "Poor Clopidogrel Metabolism", "Clopidogrel", "PharmGKB Level 1A", "PharmGKB"),
+            ("DPYD", "*2A", "Severe 5-FU Toxicity", "Fluorouracil", "PharmGKB Level 1A", "PharmGKB"),
         ]
         conn.executemany(
             "INSERT OR REPLACE INTO variant_evidence VALUES (?,?,?,?,?,?)",
