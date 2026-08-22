@@ -115,7 +115,6 @@ class VariantAnnotationEngine:
             variant_key = (chrom, pos, ref, alt, gene.upper(), mutation.upper())
             if variant_key in seen_variants:
                 validation["duplicate_rows"] += 1
-                continue
             seen_variants.add(variant_key)
 
             if gene != "UNKNOWN":
