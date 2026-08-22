@@ -1,10 +1,16 @@
+import re
 import sqlite3
+from datetime import datetime, timezone
 from pathlib import Path
 
+import pandas as pd
 from fastapi import FastAPI, File, HTTPException, UploadFile
 from fastapi.middleware.cors import CORSMiddleware
+from fastapi.responses import Response
 
 from app.services.ai_layer import review_evidence
+from app.services.pdf_generator import PDFReportService
+from app.services.report_generator import generate_html_report
 from app.services.vcf_parser import DB_PATH, VariantAnnotationEngine
 
 app = FastAPI(title="PharmaGen Clinical API")
@@ -125,3 +131,63 @@ async def ai_review(payload: dict):
     if any(not evidence.get(field) for field in required):
         raise HTTPException(status_code=400, detail="Evidence is missing required fields.")
     return review_evidence(evidence, context)
+
+
+def _report_filename(raw_name, extension: str) -> str:
+    stem = re.sub(r"[^A-Za-z0-9_-]", "_", Path(raw_name or "").stem) or "pharmagen_report"
+    return f"{stem}_clinical_review.{extension}"
+
+
+@app.post("/api/v1/report/pdf")
+async def export_pdf_report(payload: dict):
+    rows = payload.get("rows") or []
+    if not rows:
+        raise HTTPException(status_code=400, detail="No evidence rows supplied for PDF report.")
+    analysis = payload.get("analysis") or {}
+    validation = analysis.get("input_validation") or {}
+    meta = {
+        "filename": str(payload.get("filename") or "pharmagen_analysis"),
+        "generated_at": datetime.now(timezone.utc).strftime("%Y-%m-%d %H:%M UTC"),
+        "synthetic_data": bool(analysis.get("synthetic_data", False)),
+        "patients_observed": validation.get("patients_observed", 0),
+        "validation": validation,
+        "summary": {
+            "variants_count": analysis.get("variants_count", len(rows)),
+            "exact_matches": analysis.get("exact_matches"),
+            "contextual_matches": analysis.get("contextual_matches"),
+            "no_matches": analysis.get("no_matches"),
+        },
+    }
+    pdf_bytes = PDFReportService.create_clinical_pdf(pd.DataFrame(rows), meta=meta)
+    return Response(
+        content=pdf_bytes,
+        media_type="application/pdf",
+        headers={
+            "Content-Disposition": 'attachment; filename="'
+            + _report_filename(payload.get("filename"), "pdf")
+            + '"'
+        },
+    )
+
+
+@app.post("/api/v1/report/html")
+async def export_html_report(payload: dict):
+    analysis = payload.get("analysis")
+    rows = payload.get("rows") or []
+    if not isinstance(analysis, dict) or not rows:
+        raise HTTPException(
+            status_code=400,
+            detail="HTML report requires an analysis summary and evidence rows.",
+        )
+    html = generate_html_report(
+        str(payload.get("filename") or "pharmagen_analysis"), analysis, rows
+    )
+    return Response(
+        content=html,
+        media_type="text/html",
+        headers={
+            "Content-Disposition": 'attachment; filename="'
+            + _report_filename(payload.get("filename"), "html")
+            + '"'
+        },
+    )

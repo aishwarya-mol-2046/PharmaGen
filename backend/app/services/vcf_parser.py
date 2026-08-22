@@ -6,10 +6,26 @@ from typing import Any
 DB_PATH = str(Path(__file__).resolve().parents[2] / "data" / "raw" / "clinical_kb.db")
 
 HGVS_MAP = {
-    "Ala": "A", "Arg": "R", "Asn": "N", "Asp": "D", "Cys": "C",
-    "Glu": "E", "Gln": "Q", "Gly": "G", "His": "H", "Ile": "I",
-    "Leu": "L", "Lys": "K", "Met": "M", "Phe": "F", "Pro": "P",
-    "Ser": "S", "Thr": "T", "Trp": "W", "Tyr": "Y", "Val": "V",
+    "Ala": "A",
+    "Arg": "R",
+    "Asn": "N",
+    "Asp": "D",
+    "Cys": "C",
+    "Glu": "E",
+    "Gln": "Q",
+    "Gly": "G",
+    "His": "H",
+    "Ile": "I",
+    "Leu": "L",
+    "Lys": "K",
+    "Met": "M",
+    "Phe": "F",
+    "Pro": "P",
+    "Ser": "S",
+    "Thr": "T",
+    "Trp": "W",
+    "Tyr": "Y",
+    "Val": "V",
 }
 
 # Only convert a 3-letter amino-acid code when it is followed by a position
@@ -99,7 +115,6 @@ class VariantAnnotationEngine:
                 r_gene, r_mut = RSID_MAP[var_id]
                 gene = r_gene
                 mutation = r_mut
-
 
             # 4) Fallback
             if not mutation:

@@ -1,11 +1,18 @@
 """Pytest configuration for PharmaGen tests."""
 
 import sqlite3
+import sys
 from pathlib import Path
 
 import pytest
 
-from backend.app.services.vcf_parser import DB_PATH
+# Backend code imports as `from app.services...` (uvicorn runs with --app-dir
+# backend); mirror that here so tests can exercise app.main directly.
+BACKEND_DIR = str(Path(__file__).resolve().parents[1] / "backend")
+if BACKEND_DIR not in sys.path:
+    sys.path.insert(0, BACKEND_DIR)
+
+from backend.app.services.vcf_parser import DB_PATH  # noqa: E402
 
 
 @pytest.fixture(scope="session", autouse=True)
@@ -16,7 +23,8 @@ def ensure_database():
         # Create minimal test database with fallback data
         db_path.parent.mkdir(parents=True, exist_ok=True)
         conn = sqlite3.connect(DB_PATH)
-        conn.execute("""
+        conn.execute(
+            """
             CREATE TABLE IF NOT EXISTS variant_evidence (
                 gene TEXT,
                 mutation TEXT,
@@ -26,7 +34,8 @@ def ensure_database():
                 source TEXT,
                 PRIMARY KEY (gene, mutation, therapy, disease)
             )
-        """)
+        """
+        )
         # Insert minimal test data
         test_data = [
             ("BRAF", "V600E", "Melanoma", "Vemurafenib", "Level A", "CIViC"),

@@ -20,6 +20,10 @@ main.py
 │   ├── VariantAnnotationEngine.parse_vcf_stream_detailed()
 │   ├── VariantAnnotationEngine.match_clinical_evidence()
 │   └── returns annotated_results
+├── /api/v1/report/pdf
+│   └── PDFReportService.create_clinical_pdf(rows, meta)  # exact/contextual sections, paginated
+├── /api/v1/report/html
+│   └── report_generator.generate_html_report()
 └── /api/v1/ai-review
     └── review_evidence()
         ├── _llm_review() [optional, degrades gracefully]
@@ -123,10 +127,10 @@ For atomic tasks under 150 lines:
 ### Variant Dict
 ```python
 {
-    "chrom": str,      # "1", "X", etc.
-    "pos": str,        # genomic position
-    "gene": str,       # uppercase, e.g., "BRAF"
-    "mutation": str    # uppercase, e.g., "V600E"
+    "chrom": str,  # "1", "X", etc.
+    "pos": str,  # genomic position
+    "gene": str,  # uppercase, e.g., "BRAF"
+    "mutation": str,  # uppercase, e.g., "V600E"
 }
 ```
 
@@ -142,7 +146,7 @@ For atomic tasks under 150 lines:
     "mutation_annotated_rows": int,
     "duplicate_rows": int,
     "valid_vcf_headers": bool,
-    "annotation_coverage_percent": float
+    "annotation_coverage_percent": float,
 }
 ```
 
@@ -153,18 +157,18 @@ For atomic tasks under 150 lines:
     "therapy": str,
     "evidence_tier": str,
     "source": str,
-    "match_type": "exact" | "gene_context" | "none"
+    "match_type": "exact" | "gene_context" | "none",
 }
 ```
 
 ### AI Review Result Dict
 ```python
 {
-    "provider": str,           # "local-review" | "groq-llm"
+    "provider": str,  # "local-review" | "groq-llm"
     "summary": str,
     "key_points": list[str],
     "safety_flags": list[str],
-    "disclaimer": str          # always from DISCLAIMER constant
+    "disclaimer": str,  # always from DISCLAIMER constant
 }
 ```
 

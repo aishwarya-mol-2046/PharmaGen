@@ -103,6 +103,16 @@ def review_evidence(evidence: dict, context: str) -> dict:
 
 - `/api/v1/ai-review` returns **400 unless `evidence.match_type == "exact"`**.
 
+### Report exports
+```python
+POST / api / v1 / report / pdf  # {filename?, analysis?, rows[]} -> application/pdf (PDFReportService)
+POST / api / v1 / report / html  # {filename?, analysis, rows[]} -> text/html (generate_html_report)
+# rows use frontend matrix keys: Gene, Mutation, Disease, Targeted Drug,
+# Evidence Level (+ Source / Match Type / Chromosome); 400 when rows empty.
+# PDF renders header/metrics/validation summary, exact vs contextual sections,
+# tier guide, disclaimer; all rows paginate (no cap).
+```
+
 ## Evidence Match Policy
 
 | Match Type | Meaning | Frontend Treatment |

@@ -1,6 +1,5 @@
 import hashlib
 import os
-from html import escape
 
 import pandas as pd
 import requests
@@ -133,6 +132,8 @@ if current_content:
     if st.session_state.get("analysis_file_hash") != input_hash:
         st.session_state.pop("analysis_data", None)
         st.session_state.pop("ai_result", None)
+        st.session_state.pop("report_pdf_bytes", None)
+        st.session_state.pop("report_html_bytes", None)
         st.session_state["analysis_file_hash"] = input_hash
     st.markdown(
         f'<div class="status-strip"><strong>Uploaded file active</strong> &nbsp; {input_filename} is being checked against the evidence base.</div>',
@@ -220,7 +221,9 @@ if current_content:
                 frame.groupby(matrix_columns, dropna=False)
                 .size()
                 .reset_index(name="Patients")
-                .sort_values(["Patients", "Gene", "Mutation"], ascending=[False, True, True], kind="stable")
+                .sort_values(
+                    ["Patients", "Gene", "Mutation"], ascending=[False, True, True], kind="stable"
+                )
                 .reset_index(drop=True)
             )
             return aggregated
@@ -270,8 +273,7 @@ if current_content:
             df[
                 df["Evidence Level"].str.contains("Level A|Level B", na=False)
                 & df["Match Type"].eq("exact")
-            ]
-            .drop_duplicates(subset=["Gene", "Mutation"])
+            ].drop_duplicates(subset=["Gene", "Mutation"])
             if not df.empty
             else df
         )
@@ -356,14 +358,63 @@ if current_content:
             )
             exact_report_rows = filtered_df.to_dict("records")
             contextual_report_rows = contextual_df.to_dict("records")
-            report_html = f"""<!doctype html><html><head><meta charset='utf-8'><title>PharmaGen Clinical Review</title><style>body{{font-family:Arial;color:#142b2e;margin:40px}}h1{{color:#0b4f4a}}.notice{{padding:14px;background:#e8f5ef;border-left:5px solid #0f766e}}table{{width:100%;border-collapse:collapse;font-size:12px}}th,td{{border:1px solid #d8e5e3;padding:8px;text-align:left}}th{{background:#102f31;color:white}}</style></head><body><h1>PharmaGen Clinical Review</h1><p>File: {escape(input_filename)}</p><p class='notice'><strong>Synthetic/research review:</strong> Demonstration output only. Not a diagnosis or treatment recommendation.</p><p>Variants reviewed: {data["variants_count"]:,} · Exact matches: {data.get("exact_matches", 0):,} · Contextual: {data.get("contextual_matches", 0):,} · Unmatched: {data.get("no_matches", 0):,}</p><h2>Exact clinical evidence</h2>{pd.DataFrame(exact_report_rows).to_html(index=False, border=0) if exact_report_rows else "<p>No exact evidence.</p>"}<h2>Contextual evidence only</h2>{pd.DataFrame(contextual_report_rows).to_html(index=False, border=0) if contextual_report_rows else "<p>No contextual evidence.</p>"}<p>Evidence source: local CIViC-derived clinical knowledge base.</p></body></html>"""
-            st.download_button(
-                "Download clinical review report",
-                report_html.encode("utf-8"),
-                file_name="pharmagen_clinical_review.html",
-                mime="text/html",
-                use_container_width=True,
-            )
+            report_rows = exact_report_rows + contextual_report_rows
+            report_analysis = {
+                "variants_count": data.get("variants_count", 0),
+                "exact_matches": data.get("exact_matches", 0),
+                "contextual_matches": data.get("contextual_matches", 0),
+                "no_matches": data.get("no_matches", 0),
+                "synthetic_data": synthetic_data,
+                "input_validation": validation,
+            }
+
+            pdf_col, html_col = st.columns(2)
+            if pdf_col.button("Generate PDF report", use_container_width=True):
+                pdf_response = requests.post(
+                    f"{api_base_url}/api/v1/report/pdf",
+                    json={
+                        "filename": input_filename,
+                        "analysis": report_analysis,
+                        "rows": report_rows,
+                    },
+                    timeout=30,
+                )
+                if pdf_response.ok:
+                    st.session_state["report_pdf_bytes"] = pdf_response.content
+                else:
+                    st.error(f"PDF report failed ({pdf_response.status_code}): {pdf_response.text}")
+            if html_col.button("Generate clinical review report", use_container_width=True):
+                html_response = requests.post(
+                    f"{api_base_url}/api/v1/report/html",
+                    json={
+                        "filename": input_filename,
+                        "analysis": report_analysis,
+                        "rows": report_rows,
+                    },
+                    timeout=30,
+                )
+                if html_response.ok:
+                    st.session_state["report_html_bytes"] = html_response.content
+                else:
+                    st.error(
+                        f"HTML report failed ({html_response.status_code}): {html_response.text}"
+                    )
+            if st.session_state.get("report_pdf_bytes"):
+                pdf_col.download_button(
+                    "Download PDF report",
+                    st.session_state["report_pdf_bytes"],
+                    file_name="pharmagen_clinical_review.pdf",
+                    mime="application/pdf",
+                    use_container_width=True,
+                )
+            if st.session_state.get("report_html_bytes"):
+                html_col.download_button(
+                    "Download clinical review report (HTML)",
+                    st.session_state["report_html_bytes"],
+                    file_name="pharmagen_clinical_review.html",
+                    mime="text/html",
+                    use_container_width=True,
+                )
 
         with t2:
             exact_records = [
@@ -391,9 +442,9 @@ if current_content:
                 selected_variant = st.selectbox(
                     "Choose a matched biomarker to explain", variant_options
                 )
-                selected_gene, selected_mutation = [
+                selected_gene, selected_mutation = (
                     part.strip() for part in selected_variant.split(" · ", 1)
-                ]
+                )
                 selected_record = next(
                     item
                     for item in exact_records
@@ -492,7 +543,8 @@ if current_content:
                         font_color="#eef8f4",
                     )
 
-                    net.set_options("""
+                    net.set_options(
+                        """
                     var options = {
                         "nodes": {
                                         "font": { "size": 18, "face": "DM Sans", "color": "#eef8f4", "strokeWidth": 3, "strokeColor": "#102f31" },
@@ -509,7 +561,8 @@ if current_content:
                                     "physics": { "enabled": false },
                                     "interaction": { "hover": true, "navigationButtons": true }
                     }
-                    """)
+                    """
+                    )
 
                     COLOR_MAP = {
                         "Gene": "#E76F51",

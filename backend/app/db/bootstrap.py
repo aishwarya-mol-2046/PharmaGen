@@ -30,11 +30,13 @@ def _load_oncokb(cursor):
 
     pattern = r"([^\(]+)\(([^ ]+) ([^\)]+)\)"
     genie_candidates = [
-        Path(p) for p in (
+        Path(p)
+        for p in (
             os.environ.get("PHARMAGEN_ONCOKB_FILE", "").strip(),
             str(Path(__file__).resolve().parents[3] / GENIE_ONCOKB_FILENAME),
             str(Path(__file__).resolve().parents[3] / "tests" / GENIE_ONCOKB_FILENAME),
-        ) if p.strip()
+        )
+        if p.strip()
     ]
     genie_path = next((p for p in genie_candidates if p.exists()), None)
     records = []
@@ -54,7 +56,9 @@ def _load_oncokb(cursor):
                             if mutation.startswith(("P.", "C.")):
                                 mutation = mutation[2:]
                             for drug in match.group(1).strip().split(","):
-                                records.append((gene, mutation, disease, drug.strip(), tier, "OncoKB"))
+                                records.append(
+                                    (gene, mutation, disease, drug.strip(), tier, "OncoKB")
+                                )
         cursor.executemany(
             "INSERT OR IGNORE INTO variant_evidence (gene, mutation, disease, therapy, evidence_tier, source) VALUES (?,?,?,?,?,?)",
             records,
@@ -92,7 +96,8 @@ def init_real_civic_db():
     conn = sqlite3.connect(DB_PATH)
     cursor = conn.cursor()
 
-    cursor.execute("""
+    cursor.execute(
+        """
         CREATE TABLE IF NOT EXISTS variant_evidence (
             gene TEXT,
             mutation TEXT,
@@ -102,7 +107,8 @@ def init_real_civic_db():
             source TEXT,
             PRIMARY KEY (gene, mutation, therapy, disease)
         )
-    """)
+    """
+    )
 
     cursor.execute("PRAGMA table_info(variant_evidence)")
     columns = [col[1] for col in cursor.fetchall()]
@@ -185,7 +191,10 @@ def init_real_civic_db():
             ("KRAS", "G12C", "Non-Small Cell Lung Cancer", "Sotorasib", "Level A", "CIViC"),
             ("ERBB2", "AMPLIFICATION", "Breast Cancer", "Trastuzumab", "Level A", "CIViC"),
         ]
-        cursor.executemany("INSERT OR REPLACE INTO variant_evidence (gene, mutation, disease, therapy, evidence_tier, source) VALUES (?,?,?,?,?,?)", fallback)
+        cursor.executemany(
+            "INSERT OR REPLACE INTO variant_evidence (gene, mutation, disease, therapy, evidence_tier, source) VALUES (?,?,?,?,?,?)",
+            fallback,
+        )
 
     # OncoKB loads independently: a CIViC network failure no longer blocks it
     try:
