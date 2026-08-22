@@ -259,6 +259,7 @@ if current_content:
                 df["Evidence Level"].str.contains("Level A|Level B", na=False)
                 & df["Match Type"].eq("exact")
             ]
+            .drop_duplicates(subset=["Gene", "Mutation"])
             if not df.empty
             else df
         )
