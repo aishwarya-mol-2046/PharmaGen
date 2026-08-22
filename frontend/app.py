@@ -243,7 +243,6 @@ if current_content:
             options=all_levels,
             default=default_levels if default_levels else all_levels,
         )
-        )
 
         tier_filtered_df = df[df["Evidence Level"].isin(selected_levels)] if selected_levels else df
         filtered_df = tier_filtered_df[tier_filtered_df["Match Type"] == "exact"]
