@@ -1,0 +1,15 @@
+
+__pycache__/
+*.pyc
+venv/
+.env
+
+# Large Raw Datasets (Keep code light!)
+*.tar.gz
+*.zip
+backend/data/raw/variant_summary.txt
+*.vcf
+*.tar.gz
+*.tsv
+*.txt
+backend/data/raw/*
