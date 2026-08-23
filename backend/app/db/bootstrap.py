@@ -90,6 +90,105 @@ def _load_oncokb(cursor):
     print(f"Successfully loaded {len(records)} OncoKB seed-panel records into SQLite!")
 
 
+# PharmGKB native levels are NOT the CIViC A-E scale. Storing them verbatim
+# breaks the frontend's high-confidence filter ("Level A|Level B" substring),
+# so every tier is crosswalked before insert.
+PHARMGKB_TIER_CROSSWALK = {
+    "1A": "Level A",
+    "1B": "Level B",
+    "2A": "Level C",
+    "2B": "Level C",
+    "3": "Level D",
+    "4": "Level E",
+}
+
+
+def _normalize_pharmgkb_tier(raw_level) -> str:
+    """Map a raw PharmGKB/CPIC level string ('1A', 'Level 1A', 'CPIC A') to the KB scale."""
+    value = str(raw_level).strip().upper()
+    cleaned = value.replace("LEVEL", " ").replace("PHARMGKB", " ").replace("CPIC", " ")
+    for token in cleaned.split():
+        if token in PHARMGKB_TIER_CROSSWALK:
+            return PHARMGKB_TIER_CROSSWALK[token]
+        if token in {"A", "B", "C", "D"}:  # bare CPIC letter grades map 1:1
+            return f"Level {token}"
+    return "Unclassified"
+
+
+def _load_pharmgkb(cursor):
+    """Load PharmGKB germline PGx evidence independently of other sources.
+
+    Priority: full clinical-annotations TSV (PHARMAGEN_PHARMGKB_FILE) with
+    dynamic column detection -> committed curated seed panel. Always uses
+    INSERT OR IGNORE so an existing CIViC/OncoKB row for the same key keeps
+    its provenance (source is not part of the primary key).
+    """
+    file_candidates = [
+        Path(p)
+        for p in (
+            os.environ.get("PHARMAGEN_PHARMGKB_FILE", "").strip(),
+            str(Path(__file__).resolve().parents[3] / "tests" / "pharmgkb_clinical_annotations.tsv"),
+        )
+        if p.strip()
+    ]
+    source_path = next((p for p in file_candidates if p.exists()), None)
+    records = []
+
+    if source_path:
+        print(f"Loading PharmGKB data from {source_path.name}...")
+        df_pgx = pd.read_csv(source_path, sep="\t", low_memory=False)
+        cols = {c.lower(): c for c in df_pgx.columns}
+        gene_col = cols.get("gene") or cols.get("gene symbols")
+        variant_col = cols.get("variant") or cols.get("haplotypes") or cols.get("mult allelic haplotypes")
+        drug_col = cols.get("drug") or cols.get("drugs") or cols.get("drug(s)")
+        level_col = cols.get("pharmgkb level") or cols.get("level") or cols.get("cpic level")
+        disease_col = cols.get("disease") or cols.get("phenotype")
+        if not (gene_col and variant_col and drug_col and level_col):
+            raise KeyError(f"Could not map PharmGKB columns. Available: {list(df_pgx.columns)}")
+        clean_df = df_pgx.dropna(subset=[gene_col, variant_col, drug_col, level_col])
+        for _, row in clean_df.iterrows():
+            tier = _normalize_pharmgkb_tier(row[level_col])
+            if tier == "Unclassified":
+                continue
+            if disease_col and pd.notna(row.get(disease_col)):
+                disease = str(row[disease_col]).strip()
+            else:
+                disease = "Pharmacogenomic Guideline"
+            records.append((
+                str(row[gene_col]).strip().upper(),
+                str(row[variant_col]).strip().upper(),
+                disease,
+                str(row[drug_col]).strip(),
+                tier,
+                "PharmGKB",
+            ))
+    else:
+        seed_path = Path(__file__).resolve().parents[2] / "data" / "seed" / "pharmgkb_seed.csv"
+        if not seed_path.exists():
+            print("PharmGKB: no clinical TSV or seed panel found; skipping.")
+            return
+        print("Loading PharmGKB curated seed panel...")
+        df_seed = pd.read_csv(seed_path)
+        for row in df_seed.itertuples():
+            tier = _normalize_pharmgkb_tier(getattr(row, "evidence_tier", "Unclassified"))
+            if tier == "Unclassified":
+                tier = _normalize_pharmgkb_tier(getattr(row, "pharmgkb_level", "Unclassified"))
+            records.append((
+                str(row.gene).upper(),
+                str(row.mutation).upper(),
+                str(row.disease),
+                str(row.therapy),
+                tier,
+                "PharmGKB",
+            ))
+
+    cursor.executemany(
+        "INSERT OR IGNORE INTO variant_evidence (gene, mutation, disease, therapy, evidence_tier, source) VALUES (?,?,?,?,?,?)",
+        records,
+    )
+    print(f"Successfully loaded {len(records)} PharmGKB records into SQLite!")
+
+
 # Downloads live CIViC evidence into SQLite, falling back to a curated panel if the network fails
 def init_real_civic_db():
     os.makedirs(os.path.dirname(DB_PATH), exist_ok=True)
@@ -201,6 +300,12 @@ def init_real_civic_db():
         _load_oncokb(cursor)
     except Exception as e:
         print(f"OncoKB load warning ({e}); continuing with CIViC-only knowledge base.")
+
+    # PharmGKB loads independently of both other sources
+    try:
+        _load_pharmgkb(cursor)
+    except Exception as e:
+        print(f"PharmGKB load warning ({e}); continuing without germline PGx panel.")
 
     conn.commit()
     conn.close()

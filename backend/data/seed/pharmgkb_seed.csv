@@ -1,0 +1,23 @@
+gene,mutation,disease,therapy,evidence_tier,pharmgkb_level
+CYP2D6,*4,Adverse Drug Reaction,Avoid codeine and tramadol; use alternative analgesic,Level A,1A
+CYP2D6,*5,Adverse Drug Reaction,Avoid codeine and tramadol; use alternative analgesic,Level A,1A
+CYP2D6,*10,Breast Cancer,Tamoxifen - consider alternative endocrine therapy for poor metabolizer,Level B,1B
+CYP2C19,*2,Coronary Artery Disease,Clopidogrel - avoid; use prasugrel or ticagrelor,Level A,1A
+CYP2C19,*3,Coronary Artery Disease,Clopidogrel - avoid; use prasugrel or ticagrelor,Level A,1A
+CYP2C19,*17,Coronary Artery Disease,Clopidogrel - standard dosing; monitor bleeding risk,Level B,1B
+CYP2C19,*2,Fungal Infection,Voriconazole - reduce dose for poor metabolizer,Level A,1A
+CYP2C9,*2,Atrial Fibrillation,Warfarin - reduce starting dose,Level A,1A
+CYP2C9,*3,Atrial Fibrillation,Warfarin - reduce starting dose,Level A,1A
+VKORC1,-1633G>A,Atrial Fibrillation,Warfarin - lower dose requirement,Level A,1A
+SLCO1B1,*5,Hyperlipidemia,Simvastatin - reduce dose or use alternative statin; myopathy risk,Level A,1A
+SLCO1B1,*15,Hyperlipidemia,Simvastatin - reduce dose or use alternative statin; myopathy risk,Level A,1A
+TPMT,*2,Acute Lymphoblastic Leukemia,Thiopurines (6-MP/azathioprine) - reduce dose 90%,Level A,1A
+TPMT,*3A,Acute Lymphoblastic Leukemia,Thiopurines (6-MP/azathioprine) - reduce dose 90%,Level A,1A
+NUDT15,*3,Acute Lymphoblastic Leukemia,Thiopurines - reduce dose,Level A,1A
+DPYD,*2A,Colorectal Cancer,Fluoropyrimidines (capecitabine/5-FU) - avoid or reduce dose; severe toxicity risk,Level A,1A
+UGT1A1,*28,Colorectal Cancer,Irinotecan - reduce initial dose; neutropenia risk,Level A,1A
+IFNL3,rs12979860 T/T,Hepatitis C,Peginterferon-based regimens - reduced response likelihood,Level C,2A
+HLA-B,*57:01,HIV Infection,Abacavir - contraindicated; hypersensitivity risk,Level A,1A
+HLA-B,*15:02,Epilepsy,Carbamazepine - contraindicated in carriers; SJS/TEN risk,Level A,1A
+G6PD,DEFICIENCY,Malaria,Rasburicase and primaquine - contraindicated; hemolysis risk,Level A,1A
+CFTR,F508DEL,Cystic Fibrosis,Ivacaftor-lumacaftor combination therapy,Level A,1A
