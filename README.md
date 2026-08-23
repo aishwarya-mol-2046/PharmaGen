@@ -1,6 +1,6 @@
 # PharmaGen
 
-Precision oncology platform: FastAPI backend + Streamlit frontend. Ingests VCF files, matches variants against a CIViC-derived SQLite knowledge base, and surfaces clinical evidence via an interactive knowledge graph.
+Precision oncology platform: FastAPI backend + React/TypeScript frontend. Ingests VCF files, matches variants against a CIViC-derived SQLite knowledge base, and surfaces clinical evidence via an interactive knowledge graph.
 
 ## Quick Start
 
@@ -18,7 +18,7 @@ make run
 
 Once started:
 - Backend API: http://127.0.0.1:8000
-- Frontend UI: http://localhost:8501
+- Frontend UI: http://localhost:5173
 
 Press `Ctrl+C` to stop both services.
 
@@ -88,7 +88,7 @@ pharmagen/
 │       ├── graph_engine.py  # PyVis knowledge graph
 │       ├── report_generator.py  # HTML report builder
 │       └── ai_layer.py      # AI review (local + LLM fallback)
-├── frontend/app.py          # Streamlit UI
+├── frontend/                # React + TypeScript SPA (Vite)
 ├── tests/                   # Test suites
 ├── AGENTS.md                # Project rules & constraints
 ├── SKILLS.md                # Architecture & workflow guide

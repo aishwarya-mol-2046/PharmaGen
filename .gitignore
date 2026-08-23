@@ -35,11 +35,16 @@ htmlcov/
 .mypy_cache/
 .ruff_cache/
 
+# Frontend build artifacts
+frontend/node_modules/
+frontend/dist/
+
 # Project specific
 backend/data/raw/*.db
 backend/data/raw/*.tsv
 backend/data/raw/*.txt
 frontend_graph.html
+frontend/app.py.bak
 
 # Large data files
 *.vcf
@@ -59,3 +64,4 @@ Thumbs.db
 # Logs
 *.log
 logs/
+frontend/tsconfig.tsbuildinfo

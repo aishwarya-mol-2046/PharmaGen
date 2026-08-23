@@ -20,6 +20,10 @@ main.py
 │   ├── VariantAnnotationEngine.parse_vcf_stream_detailed()
 │   ├── VariantAnnotationEngine.match_clinical_evidence()
 │   └── returns annotated_results
+├── /api/v1/report/pdf
+│   └── PDFReportService.create_clinical_pdf(rows, meta)  # exact/contextual sections, paginated
+├── /api/v1/report/html
+│   └── report_generator.generate_html_report()
 └── /api/v1/ai-review
     └── review_evidence()
         ├── _llm_review() [optional, degrades gracefully]
@@ -173,9 +177,9 @@ For atomic tasks under 150 lines:
 ### Adding a New Match Type
 1. Add to `match_clinical_evidence()` in `vcf_parser.py`
 2. Update match policy table in AGENTS.md
-3. Add frontend filter in `frontend/app.py`
+3. Add frontend filter in `frontend/src/App.tsx`
 4. Add test case in `test_clinical_workflow.py`
-5. Update `frontend/app.py` matrix display logic
+5. Update matrix display in `frontend/src/components/Panels.tsx`
 
 ### Adding a New API Endpoint
 1. Define in `main.py` with `/api/v1/` prefix
@@ -219,7 +223,7 @@ def test_match_type_behavior(self):
 |---|---|---|
 | `backend/app/services/*.py` | <150 | 200 |
 | `backend/app/main.py` | <100 | 150 |
-| `frontend/app.py` | <400 | 500 |
+| `frontend/src/**` components | <200 | 300 |
 | `convert_patient_vcf.py` | <300 | 400 |
 | Test files | <50 | 100 |
 
