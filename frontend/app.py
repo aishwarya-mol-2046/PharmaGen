@@ -13,6 +13,18 @@ API_CANDIDATES = [
 ]
 API_CANDIDATES = [url.rstrip("/") for url in API_CANDIDATES if url]
 
+# Canonical display order for sources/tiers regardless of row arrival order
+SOURCE_ORDER = ["CIViC Database", "OncoKB", "PharmGKB"]
+TIER_ORDER = ["Level A", "Level B", "Level C", "Level D", "Level E", "Unclassified"]
+
+
+def _ordered_options(values, canonical_order):
+    """Known items first in canonical order, then anything else alphabetically."""
+    present = {v for v in values if v and v != "N/A"}
+    ordered = [item for item in canonical_order if item in present]
+    ordered += sorted(present - set(canonical_order))
+    return ordered
+
 
 def resolve_api_base_url():
     for base_url in API_CANDIDATES:
@@ -99,7 +111,7 @@ st.markdown(
 
 st.sidebar.markdown('<div class="sidebar-title">Analysis workspace</div>', unsafe_allow_html=True)
 st.sidebar.markdown(
-    '<div class="sidebar-copy">Upload a VCF to trace variants through the local clinical evidence base.</div>',
+    '<div class="sidebar-copy">Upload a VCF to trace variants through the local hybrid evidence base (CIViC · OncoKB · PharmGKB).</div>',
     unsafe_allow_html=True,
 )
 uploaded_file = st.sidebar.file_uploader("Upload genomics VCF", type=["vcf", "txt"])
@@ -113,9 +125,19 @@ else:
     current_content = st.session_state.get("uploaded_content")
     current_hash = st.session_state.get("uploaded_hash")
 api_base_url, health_data = resolve_api_base_url()
+api_status_live = api_base_url is not None
+if not api_status_live:
+    # Transient health-probe hiccups must not break in-flight actions:
+    # fall back to the last known-good URL cached earlier this session.
+    api_base_url = st.session_state.get("resolved_api_base_url")
+    health_data = st.session_state.get("resolved_health_data")
 if api_base_url:
+    st.session_state["resolved_api_base_url"] = api_base_url
+    st.session_state["resolved_health_data"] = health_data
+if api_base_url:
+    cache_note = "" if api_status_live else " <em>(cached — live probe timed out)</em>"
     st.sidebar.markdown(
-        f'<div class="sidebar-status sidebar-status-ok"><strong>Backend connected</strong><br>{api_base_url}<br>{health_data.get("evidence_records", 0):,} evidence records loaded</div>',
+        f'<div class="sidebar-status sidebar-status-ok"><strong>Backend connected</strong>{cache_note}<br>{api_base_url}<br>{health_data.get("evidence_records", 0):,} evidence records loaded</div>',
         unsafe_allow_html=True,
     )
 else:
@@ -170,7 +192,7 @@ if current_content:
 
         if synthetic_data:
             st.info(
-                "Synthetic demonstration dataset: genomic coordinates are simulated; clinical relationships come from the local CIViC-derived evidence base."
+                "Synthetic demonstration dataset: genomic coordinates are simulated; clinical relationships come from the local hybrid evidence base (CIViC · OncoKB · PharmGKB)."
             )
         elif data.get("exact_matches", 0) > 0:
             st.success(
@@ -234,7 +256,11 @@ if current_content:
         # Sidebar Filter Controls
         st.sidebar.markdown("---")
         st.sidebar.subheader("Filter Clinical Matrix")
-        all_levels = df["Evidence Level"].unique().tolist() if not df.empty else []
+        all_levels = (
+            _ordered_options(df["Evidence Level"].unique().tolist(), TIER_ORDER)
+            if not df.empty
+            else []
+        )
         default_levels = all_levels
 
         selected_levels = st.sidebar.multiselect(
@@ -243,7 +269,7 @@ if current_content:
             default=default_levels if default_levels else all_levels,
         )
 
-        all_sources = df["Source"].unique().tolist() if not df.empty else []
+        all_sources = _ordered_options(df["Source"].unique().tolist(), SOURCE_ORDER)
         selected_sources = st.sidebar.multiselect(
             "Evidence Sources",
             options=all_sources,
@@ -314,7 +340,7 @@ if current_content:
                 "Annotation coverage", f"{validation.get('annotation_coverage_percent', 0)}%"
             )
             st.markdown(
-                "**Evidence source:** local CIViC-derived clinical knowledge base. **Match policy:** exact gene plus exact mutation is actionable; gene-only evidence is contextual only; unmatched variants do not receive treatment recommendations."
+                "**Evidence sources:** local hybrid knowledge base (CIViC · OncoKB · PharmGKB), tiers normalized to one Level A–E scale. **Match policy:** exact gene plus exact mutation is actionable; gene-only evidence is contextual only; unmatched variants do not receive treatment recommendations."
             )
 
         st.markdown(
@@ -370,35 +396,43 @@ if current_content:
 
             pdf_col, html_col = st.columns(2)
             if pdf_col.button("Generate PDF report", use_container_width=True):
-                pdf_response = requests.post(
-                    f"{api_base_url}/api/v1/report/pdf",
-                    json={
-                        "filename": input_filename,
-                        "analysis": report_analysis,
-                        "rows": report_rows,
-                    },
-                    timeout=30,
-                )
-                if pdf_response.ok:
-                    st.session_state["report_pdf_bytes"] = pdf_response.content
-                else:
-                    st.error(f"PDF report failed ({pdf_response.status_code}): {pdf_response.text}")
-            if html_col.button("Generate clinical review report", use_container_width=True):
-                html_response = requests.post(
-                    f"{api_base_url}/api/v1/report/html",
-                    json={
-                        "filename": input_filename,
-                        "analysis": report_analysis,
-                        "rows": report_rows,
-                    },
-                    timeout=30,
-                )
-                if html_response.ok:
-                    st.session_state["report_html_bytes"] = html_response.content
-                else:
-                    st.error(
-                        f"HTML report failed ({html_response.status_code}): {html_response.text}"
+                try:
+                    pdf_response = requests.post(
+                        f"{api_base_url}/api/v1/report/pdf",
+                        json={
+                            "filename": input_filename,
+                            "analysis": report_analysis,
+                            "rows": report_rows,
+                        },
+                        timeout=60,
                     )
+                    if pdf_response.ok:
+                        st.session_state["report_pdf_bytes"] = pdf_response.content
+                    else:
+                        st.error(
+                            f"PDF report failed ({pdf_response.status_code}): {pdf_response.text}"
+                        )
+                except requests.RequestException as error:
+                    st.error(f"PDF service unreachable ({api_base_url}): {error}")
+            if html_col.button("Generate clinical review report", use_container_width=True):
+                try:
+                    html_response = requests.post(
+                        f"{api_base_url}/api/v1/report/html",
+                        json={
+                            "filename": input_filename,
+                            "analysis": report_analysis,
+                            "rows": report_rows,
+                        },
+                        timeout=60,
+                    )
+                    if html_response.ok:
+                        st.session_state["report_html_bytes"] = html_response.content
+                    else:
+                        st.error(
+                            f"HTML report failed ({html_response.status_code}): {html_response.text}"
+                        )
+                except requests.RequestException as error:
+                    st.error(f"Report service unreachable ({api_base_url}): {error}")
             if st.session_state.get("report_pdf_bytes"):
                 pdf_col.download_button(
                     "Download PDF report",
@@ -476,7 +510,7 @@ if current_content:
 
                     with st.expander("AI-assisted clinical review (optional)"):
                         st.markdown(
-                            "Provide non-identifying clinical context to generate a cautious summary and context flags. The deterministic CIViC match remains the source of truth."
+                            "Provide non-identifying clinical context to generate a cautious summary and context flags. The deterministic knowledge-base match remains the source of truth."
                         )
                         patient_context = st.text_area(
                             "Clinical patient context",
