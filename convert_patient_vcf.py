@@ -143,6 +143,112 @@ def generate_demo_patient_vcf(output_vcf: str, row_count: int = 100) -> None:
     print(f"Generated {row_count} valid patient VCF rows at {out_path}")
 
 
+def _fetch_evidence_pairs(conn, source: str | None = None):
+    """Return distinct (gene, mutation) evidence pairs, optionally filtered by source."""
+    if source:
+        return conn.execute(
+            """
+            SELECT gene, mutation
+            FROM variant_evidence
+            WHERE gene IS NOT NULL AND mutation IS NOT NULL AND source = ?
+            GROUP BY gene, mutation
+            ORDER BY gene, mutation
+            """,
+            (source,),
+        ).fetchall()
+    return conn.execute(
+        """
+        SELECT gene, mutation
+        FROM variant_evidence
+        WHERE gene IS NOT NULL AND mutation IS NOT NULL
+        GROUP BY gene, mutation
+        ORDER BY gene, mutation
+        """
+    ).fetchall()
+
+
+def generate_pgx_enriched_cohort_vcf(
+    output_vcf: str,
+    somatic_count: int = 1000,
+    pgx_count: int = 120,
+    seed: int = 42,
+) -> None:
+    """Build a combined cohort: synthetic somatic rows + germline PharmGKB PGx rows.
+
+    Somatic pairs come from CIViC/OncoKB evidence; germline rows come from the
+    PharmGKB source so the three-source hybrid pipeline is demonstrable on a
+    single uploaded file. All coordinates are synthetic and flagged as such.
+    """
+    if not DB_PATH.exists():
+        raise FileNotFoundError(f"Clinical database not found at {DB_PATH}")
+    conn = sqlite3.connect(DB_PATH)
+    somatic_pairs = [
+        (gene, mutation, tier, source)
+        for gene, mutation, tier, source in conn.execute(
+            """
+            SELECT gene, mutation, evidence_tier, source
+            FROM variant_evidence
+            WHERE gene IS NOT NULL AND mutation IS NOT NULL
+            GROUP BY gene, mutation
+            ORDER BY gene, mutation
+            """
+        ).fetchall()
+    ]
+    pgx_pairs = [pair for pair in _fetch_evidence_pairs(conn, "PharmGKB") if pair[0] and pair[1]]
+    conn.close()
+
+    if not somatic_pairs:
+        raise ValueError("Clinical database contains no usable gene/mutation pairs")
+    if not pgx_pairs:
+        raise ValueError("No PharmGKB rows in the knowledge base; run bootstrap first")
+
+    generator = random.Random(seed)
+    shuffled = list(somatic_pairs)
+    generator.shuffle(shuffled)
+    somatic_rows = [shuffled[index % len(shuffled)] for index in range(somatic_count)]
+
+    out_path = Path(output_vcf)
+    with out_path.open("w", encoding="utf-8", newline="") as out:
+        out.write("##fileformat=VCFv4.2\n")
+        out.write("##synthetic_data=true\n")
+        out.write("##synthetic_coordinates=true\n")
+        out.write("##source=civic_oncokb_pharmgkb_hybrid_cohort\n")
+        out.write("##germline_pgx=true\n")
+        out.write("#CHROM\tPOS\tID\tREF\tALT\tQUAL\tFILTER\tINFO\n")
+
+        # Tumor (somatic) rows — patient tumor sample IDs
+        for index, (gene, mutation, tier, source) in enumerate(somatic_rows, start=1):
+            chrom = ((index - 1) % 22) + 1
+            pos = 1000000 + index * 17
+            ref, alt = ("A", "T") if index % 2 else ("G", "C")
+            variant_id = f"SYNTH-{index:06d}"
+            sample = f"P-{(index - 1) % 174 + 1:07d}-T01-IM3"
+            info = (
+                f"GENE={gene};MUT={mutation};"
+                f"EVIDENCE_TIER={tier};SOURCE={source};SYNTHETIC=1;SAMPLE={sample}"
+            )
+            out.write(f"{chrom}\t{pos}\t{variant_id}\t{ref}\t{alt}\t.\tPASS\t{info}\n")
+
+        # Germline pharmacogenomics rows — matched germline sample IDs (P-n-G01-GL)
+        for offset in range(pgx_count):
+            gene, mutation = pgx_pairs[offset % len(pgx_pairs)]
+            chrom = ((offset + 7) % 22) + 1  # deliberately different spread than somatic block
+            pos = 20000000 + offset * 29
+            ref, alt = ("C", "T") if offset % 2 else ("A", "G")
+            variant_id = f"PGX-{offset + 1:06d}"
+            patient = f"P-{(offset % 174) + 1:07d}-G01-GL"
+            info = (
+                f"GENE={gene};MUT={mutation};"
+                f"SOURCE=PharmGKB;GERMLINE=1;SYNTHETIC=1;SAMPLE={patient}"
+            )
+            out.write(f"{chrom}\t{pos}\t{variant_id}\t{ref}\t{alt}\t.\tPASS\t{info}\n")
+
+    print(
+        f"Generated {somatic_count} somatic + {pgx_count} germline PGx rows at {out_path} "
+        f"(seed={seed}, {len(pgx_pairs)} distinct PharmGKB pairs)"
+    )
+
+
 def generate_synthetic_clinical_vcf(output_vcf: str, row_count: int = 1000, seed: int = 42) -> None:
     """Generate labelled synthetic variants from the local clinical evidence pairs.
 
@@ -280,9 +386,37 @@ if __name__ == "__main__":
         default=None,
         help="Optional cap for raw IndiGen conversion; useful for testing before full conversion",
     )
+    parser.add_argument(
+        "--pgx-cohort",
+        action="store_true",
+        help="Create a cohort VCF combining synthetic somatic rows with germline PharmGKB PGx rows",
+    )
+    parser.add_argument(
+        "--somatic-count",
+        type=int,
+        default=1000,
+        help="Number of somatic rows when --pgx-cohort is used",
+    )
+    parser.add_argument(
+        "--pgx-count",
+        type=int,
+        default=120,
+        help="Number of germline PharmGKB rows to append when --pgx-cohort is used",
+    )
     args = parser.parse_args()
 
     out_path = args.output_file or args.output_file_flag
+
+    if args.pgx_cohort:
+        if not out_path:
+            raise ValueError("Output file path is required when using --pgx-cohort")
+        generate_pgx_enriched_cohort_vcf(
+            out_path,
+            somatic_count=args.somatic_count,
+            pgx_count=args.pgx_count,
+            seed=args.seed,
+        )
+        raise SystemExit(0)
 
     if args.generate_demo:
         if not out_path:

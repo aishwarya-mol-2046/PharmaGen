@@ -59,6 +59,9 @@ python convert_patient_vcf.py --generate-demo --demo-count 100 demo.vcf
 
 # Generate synthetic clinical VCF
 python convert_patient_vcf.py --synthetic-clinical --synthetic-count 500 synth.vcf
+
+# Generate combined cohort: 1000 somatic (CIViC/OncoKB) + 120 germline PGx (PharmGKB) rows
+python convert_patient_vcf.py --pgx-cohort --somatic-count 1000 --pgx-count 120 --output-file cohort_1000_pgx.vcf
 ```
 
 ### Clinical Knowledge Base (hybrid)
