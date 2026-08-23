@@ -1,0 +1,53 @@
+.hero {
+  position: relative; height: 330px; overflow: hidden;
+  border-bottom: 1.5px solid var(--line-hard);
+  background:
+    radial-gradient(720px 300px at 78% 0%, var(--wash-a), transparent 60%),
+    radial-gradient(600px 340px at 8% 110%, var(--wash-b), transparent 55%),
+    repeating-linear-gradient(90deg, transparent 0 34px, var(--grid) 34px 35px),
+    var(--paper);
+}
+.hero-headline { position: absolute; left: 4.2%; top: 42px; z-index: 3; max-width: 560px; }
+.hero-headline .kicker { margin-bottom: 14px; animation: rise 0.6s 0.05s both; }
+.hero-headline h1 {
+  font-family: var(--serif-display); font-optical-sizing: auto;
+  font-variation-settings: "SOFT" 70, "WONK" 1;
+  font-size: clamp(2.5rem, 5.2vw, 4.5rem); font-weight: 640;
+  line-height: 0.98; letter-spacing: -0.03em; margin-bottom: 14px;
+  animation: rise 0.7s 0.16s both;
+}
+.hero-headline h1 em { font-style: italic; font-weight: 420; color: var(--viridian); }
+.hero-tag {
+  max-width: 430px; font-size: 0.98rem; line-height: 1.62;
+  color: var(--ink-soft); animation: rise 0.7s 0.3s both;
+}
+.hero-helix { position: absolute; inset: 0; width: 100%; height: 100%; }
+.idle-spin { animation: spin-z 30s linear infinite; transform-origin: 190px 150px; transform-box: view-box; }
+@keyframes spin-z { to { transform: rotate(360deg); } }
+
+.hero-cue {
+  position: absolute; right: 4%; bottom: 44px;
+  font-family: var(--mono); font-size: 0.56rem; letter-spacing: 0.32em;
+  text-transform: uppercase; color: var(--ink-soft);
+  animation: rise 0.7s 0.5s both;
+}
+.hero-cue b { color: var(--accent); font-weight: 700; }
+
+.hero-ticker {
+  position: absolute; left: 0; right: 0; bottom: 0; overflow: hidden;
+  border-top: 1px solid var(--line-hard); background: color-mix(in srgb, var(--panel) 88%, transparent);
+  padding: 6px 0;
+}
+.ticker-inner {
+  display: inline-flex; white-space: nowrap;
+  font-family: var(--mono); font-size: 0.6rem; letter-spacing: 0.34em;
+  color: var(--ink-soft); opacity: 0.85;
+  animation: ticker-scroll 36s linear infinite;
+}
+.ticker-inner span { padding-right: 3.4rem; }
+.ticker-inner b { color: var(--accent); font-weight: 400; }
+@keyframes ticker-scroll { to { transform: translateX(-50%); } }
+
+@media (prefers-reduced-motion: reduce) {
+  .idle-spin, .ticker-inner { animation: none !important; }
+}
