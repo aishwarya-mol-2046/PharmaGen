@@ -349,9 +349,84 @@ textarea.context-input::placeholder { color: var(--ink-soft); opacity: 1; }
 [data-theme="dark"] .tier-LevelC { color: #f0d07a; border-color: #f0d07a; background: rgba(240,208,122,0.12); }
 [data-theme="dark"] .tier-LevelD { color: #f0a07a; border-color: #f0a07a; background: rgba(240,160,122,0.12); }
 
-/* ---------- graph fixes ---------- */
-.graph-frame { overflow: hidden; }
-.graph-frame svg { display: block; width: 100%; height: auto; min-height: 260px; }
+/* ---------- graph — properly formatted with consistent margins ---------- */
+.graph-frame {
+  overflow: hidden;
+  background: var(--panel);
+  border: 1px solid var(--line-hard);
+  border-radius: 3px;
+  box-shadow: var(--shadow);
+  margin: 1.4rem 0;
+}
+
+.graph-viewport {
+  padding: 1.2rem 1rem 0.8rem;
+  overflow-x: auto;
+  background:
+    radial-gradient(600px 200px at 50% 0%, color-mix(in srgb, var(--viridian) 4%, transparent), transparent 70%),
+    var(--panel);
+}
+
+.graph-frame svg {
+  display: block;
+  width: 100%;
+  height: auto;
+  min-height: 280px;
+  max-width: 1000px;
+  margin: 0 auto;
+}
+
+.graph-guide { stroke: var(--line); stroke-width: 1; stroke-dasharray: 6 6; }
+.graph-arrow { fill: var(--ink-soft); }
+.graph-edge-line { stroke: var(--ink-soft); stroke-width: 2.2; stroke-linecap: round; }
+.graph-edge-badge { fill: var(--panel); stroke: var(--viridian); stroke-width: 1.2; }
+.graph-edge-text { fill: var(--viridian); font-size: 9px; font-family: var(--mono); font-weight: 700; letter-spacing: 0.06em; }
+
+.graph-node { cursor: default; }
+.graph-node--gene { fill: var(--accent); }
+.graph-node--mutation { fill: var(--gold); }
+.graph-node--disease { fill: var(--ink-soft); }
+.graph-node--drug { fill: var(--viridian); }
+
+.graph-node-label {
+  fill: #fbf8ef;
+  font-size: 12.5px;
+  font-family: var(--serif-display);
+  font-weight: 600;
+  letter-spacing: -0.01em;
+  paint-order: stroke;
+  stroke: rgba(0,0,0,0.12);
+  stroke-width: 0.5px;
+}
+
+.graph-node-sub {
+  fill: #fbf8ef;
+  opacity: 0.92;
+  font-size: 7.5px;
+  font-family: var(--mono);
+  letter-spacing: 0.14em;
+  text-transform: uppercase;
+  font-weight: 600;
+}
+
+.graph-caption {
+  font-family: var(--mono);
+  font-size: 0.62rem;
+  line-height: 1.6;
+  color: var(--ink-soft);
+  padding: 0.75rem 1rem;
+  border-top: 1px dashed var(--line);
+  background: color-mix(in srgb, var(--panel2) 40%, var(--panel));
+}
+
+@media (max-width: 900px) {
+  .graph-viewport { padding: 0.8rem 0.6rem 0.6rem; }
+  .graph-frame svg { min-height: 220px; }
+  .graph-node-label { font-size: 11px; }
+  .graph-node-sub { font-size: 7px; }
+}
+
 @media (max-width: 640px) {
   .graph-frame svg { min-height: 200px; }
+  .graph-viewport { overflow-x: auto; -webkit-overflow-scrolling: touch; }
 }

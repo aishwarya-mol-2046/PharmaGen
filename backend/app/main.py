@@ -133,6 +133,98 @@ async def ai_review(payload: dict):
     return review_evidence(evidence, context)
 
 
+@app.get("/api/v1/knowledge-base")
+async def browse_knowledge_base(
+    page: int = 1,
+    page_size: int = 20,
+    search: str = "",
+    gene: str = "",
+    disease: str = "",
+    therapy: str = "",
+    evidence_tier: str = "",
+    source: str = "",
+):
+    """Browse the clinical knowledge base with pagination and filtering."""
+    if page < 1:
+        page = 1
+    if page_size < 1:
+        page_size = 20
+    if page_size > 100:
+        page_size = 100
+
+    db_path = Path(DB_PATH)
+    if not db_path.exists():
+        raise HTTPException(
+            status_code=503, detail="Knowledge base not initialized. Run: make bootstrap"
+        )
+
+    try:
+        with sqlite3.connect(DB_PATH) as conn:
+            conn.row_factory = sqlite3.Row
+            cur = conn.cursor()
+
+            where_clauses = []
+            params: list = []
+
+            if search:
+                where_clauses.append(
+                    "(UPPER(gene) LIKE UPPER(?) OR UPPER(mutation) LIKE UPPER(?) OR UPPER(disease) LIKE UPPER(?) OR UPPER(therapy) LIKE UPPER(?))"
+                )
+                like = f"%{search}%"
+                params.extend([like, like, like, like])
+            if gene:
+                where_clauses.append("UPPER(gene) = UPPER(?)")
+                params.append(gene)
+            if disease:
+                where_clauses.append("UPPER(disease) LIKE UPPER(?)")
+                params.append(f"%{disease}%")
+            if therapy:
+                where_clauses.append("UPPER(therapy) LIKE UPPER(?)")
+                params.append(f"%{therapy}%")
+            if evidence_tier:
+                where_clauses.append("UPPER(evidence_tier) = UPPER(?)")
+                params.append(evidence_tier)
+            if source:
+                where_clauses.append("UPPER(source) = UPPER(?)")
+                params.append(source)
+
+            where_sql = (" WHERE " + " AND ".join(where_clauses)) if where_clauses else ""
+
+            cur.execute(f"SELECT COUNT(*) FROM variant_evidence{where_sql}", params)
+            total = cur.fetchone()[0]
+
+            offset = (page - 1) * page_size
+            cur.execute(
+                f"SELECT gene, mutation, disease, therapy, evidence_tier, source FROM variant_evidence{where_sql} ORDER BY gene, mutation, disease LIMIT ? OFFSET ?",
+                params + [page_size, offset],
+            )
+            rows = [dict(r) for r in cur.fetchall()]
+
+            cur.execute("SELECT DISTINCT gene FROM variant_evidence ORDER BY gene LIMIT 100")
+            genes = [r[0] for r in cur.fetchall()]
+            cur.execute(
+                "SELECT DISTINCT evidence_tier FROM variant_evidence ORDER BY evidence_tier"
+            )
+            tiers = [r[0] for r in cur.fetchall()]
+            cur.execute("SELECT DISTINCT source FROM variant_evidence ORDER BY source")
+            sources = [r[0] for r in cur.fetchall()]
+
+            total_pages = (total + page_size - 1) // page_size if total else 0
+
+            return {
+                "items": rows,
+                "total": total,
+                "page": page,
+                "page_size": page_size,
+                "total_pages": total_pages,
+                "genes": genes,
+                "tiers": tiers,
+                "sources": sources,
+            }
+    except sqlite3.OperationalError as e:
+        raise HTTPException(status_code=500, detail=f"Database error: {e}") from e
+
+
 def _report_filename(raw_name, extension: str) -> str:
     stem = re.sub(r"[^A-Za-z0-9_-]", "_", Path(raw_name or "").stem) or "pharmagen_report"
     return f"{stem}_clinical_review.{extension}"
