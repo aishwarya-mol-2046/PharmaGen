@@ -44,7 +44,7 @@ run: ## Run both backend and frontend
 	./run.sh
 
 backend: ## Run backend only
-	uvicorn app.main:app --app-dir backend --reload --host 127.0.0.1 --port 8000
+	@if [ -f .env ]; then set -a; . ./.env; set +a; fi; uvicorn app.main:app --app-dir backend --reload --host 127.0.0.1 --port 8000
 
 frontend: ## Run frontend dev server (Vite)
 	npm run dev --prefix frontend
