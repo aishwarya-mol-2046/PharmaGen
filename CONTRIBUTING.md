@@ -90,7 +90,7 @@ pharmagen/
 │       ├── main.py              # FastAPI endpoints
 │       └── services/            # Business logic
 ├── frontend/
-│   └── app.py                   # Streamlit UI
+│   ├── index.html               # SPA entry
 ├── tests/                       # Test suites
 ├── AGENTS.md                    # Project rules
 ├── SKILLS.md                    # Architecture guide

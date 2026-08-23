@@ -46,8 +46,11 @@ run: ## Run both backend and frontend
 backend: ## Run backend only
 	uvicorn app.main:app --app-dir backend --reload --host 127.0.0.1 --port 8000
 
-frontend: ## Run frontend only
-	streamlit run frontend/app.py --server.port 8501
+frontend: ## Run frontend dev server (Vite)
+	npm run dev --prefix frontend
+
+frontend-build: ## Build frontend production bundle
+	npm ci --prefix frontend && npm run build --prefix frontend
 
 demo: ## Generate demo VCF and run analysis
 	python convert_patient_vcf.py --generate-demo --demo-count 50 demo.vcf

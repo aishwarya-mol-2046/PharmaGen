@@ -3,7 +3,7 @@ set -euo pipefail
 
 BACKEND_HOST="127.0.0.1"
 BACKEND_PORT="8000"
-FRONTEND_PORT="8501"
+FRONTEND_PORT="5173"
 SKIP_INSTALL=""
 
 usage() {
@@ -58,9 +58,11 @@ trap cleanup EXIT
     --port "$BACKEND_PORT" &
 BACKEND_PID=$!
 
-"$VENV_DIR/bin/streamlit" run "$PROJECT_DIR/frontend/app.py" \
-    --server.port "$FRONTEND_PORT" \
-    --server.headless true &
+if [ ! -d "$PROJECT_DIR/frontend/node_modules" ]; then
+    echo "Installing frontend dependencies..."
+    (cd "$PROJECT_DIR/frontend" && npm install --no-audit --no-fund)
+fi
+(cd "$PROJECT_DIR/frontend" && npm run dev -- --port "$FRONTEND_PORT") &
 FRONTEND_PID=$!
 
 echo "Backend:  http://$BACKEND_HOST:$BACKEND_PORT"

@@ -1,7 +1,7 @@
 param(
     [string]$BackendHost = "127.0.0.1",
     [int]$BackendPort = 8000,
-    [int]$FrontendPort = 8501,
+    [int]$FrontendPort = 5173,
     [switch]$SkipInstall
 )
 
@@ -10,7 +10,7 @@ $ErrorActionPreference = "Stop"
 $ProjectDir = Split-Path -Parent $MyInvocation.MyCommand.Path
 $VenvDir = Join-Path $ProjectDir ".venv"
 $Pip = Join-Path $VenvDir "Scripts\pip.exe"
-$Streamlit = Join-Path $VenvDir "Scripts\streamlit.exe"
+
 
 if (-not $SkipInstall) {
     if (-not (Test-Path $VenvDir)) {
@@ -26,14 +26,13 @@ $BackendArgs = @(
     "--host", $BackendHost,
     "--port", "$BackendPort"
 )
-$FrontendArgs = @(
-    "run", "`"$(Join-Path $ProjectDir "frontend\app.py")`"",
-    "--server.port", "$FrontendPort",
-    "--server.headless", "true"
-)
+if (-not (Test-Path (Join-Path $ProjectDir "frontend\node_modules"))) {
+    Write-Host "Installing frontend dependencies..."
+    Push-Location (Join-Path $ProjectDir "frontend"); npm install --no-audit --no-fund; Pop-Location
+}
 
 $Backend = Start-Process -FilePath (Join-Path $VenvDir "Scripts\python.exe") -ArgumentList $BackendArgs -PassThru
-$Frontend = Start-Process -FilePath $Streamlit -ArgumentList $FrontendArgs -PassThru
+$Frontend = Start-Process -FilePath "npm" -ArgumentList @("run","dev","--","--port","$FrontendPort") -WorkingDirectory (Join-Path $ProjectDir "frontend") -PassThru
 
 Write-Host "Backend:  http://$BackendHost:$BackendPort"
 Write-Host "Frontend: http://localhost:$FrontendPort"

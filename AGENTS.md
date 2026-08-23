@@ -2,7 +2,7 @@
 
 ## Project Overview
 
-Precision oncology platform: FastAPI backend + Streamlit frontend. Ingests VCF files, matches variants against a hybrid CIViC + OncoKB SQLite knowledge base, and surfaces clinical evidence via an interactive knowledge graph.
+Precision oncology platform: FastAPI backend + React/TypeScript frontend. Ingests VCF files, matches variants against a hybrid CIViC + OncoKB SQLite knowledge base, and surfaces clinical evidence via an interactive knowledge graph.
 
 ## Directory Boundaries
 
@@ -18,7 +18,7 @@ pharmagen/
 │   │   └── ai_layer.py      # AI review (local rules + LLM fallback)
 │   └── db/bootstrap.py      # SQLite KB init: CIViC nightly TSV + OncoKB
 ├── backend/data/seed/oncokb_seed.csv  # Committed offline OncoKB panel
-├── frontend/app.py          # Streamlit UI — single-file frontend
+├── frontend/                # React + TypeScript SPA (Vite) — src/App.tsx entry
 ├── convert_patient_vcf.py   # CLI: CSV↔VCF + synthetic data generator
 ├── tests/                   # unittest-style suites, run via pytest
 ├── run.sh / run.ps1         # Launch both services
@@ -33,7 +33,7 @@ pharmagen/
 source .venv/bin/activate  # always work inside the venv
 make install-dev           # deps + pre-commit hooks (no CI exists; hooks are the gate)
 make bootstrap             # populate SQLite KB — required before analyze/run
-make run                   # backend (:8000) + frontend (:8501)
+make run                   # backend (:8000) + frontend (:5173)
 make test                  # all tests (pytest)
 make test-coverage         # fails below 70% backend coverage
 make lint | format | typecheck | clean
@@ -102,16 +102,6 @@ def review_evidence(evidence: dict, context: str) -> dict:
 ```
 
 - `/api/v1/ai-review` returns **400 unless `evidence.match_type == "exact"`**.
-
-### Report exports
-```python
-POST / api / v1 / report / pdf  # {filename?, analysis?, rows[]} -> application/pdf (PDFReportService)
-POST / api / v1 / report / html  # {filename?, analysis, rows[]} -> text/html (generate_html_report)
-# rows use frontend matrix keys: Gene, Mutation, Disease, Targeted Drug,
-# Evidence Level (+ Source / Match Type / Chromosome); 400 when rows empty.
-# PDF renders header/metrics/validation summary, exact vs contextual sections,
-# tier guide, disclaimer; all rows paginate (no cap).
-```
 
 ## Evidence Match Policy
 
