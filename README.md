@@ -69,13 +69,16 @@ python convert_patient_vcf.py --synthetic-clinical --synthetic-count 500 synth.v
 |--------|--------------|-------|
 | **CIViC** | Live nightly TSV download | ~2,500 evidence records; falls back to a 4-record panel offline |
 | **OncoKB** | Full GENIE annotation TSV if available, else committed seed panel | Tier crosswalked: Level 1→A, 2→B, 3A/3B→C, 4→D |
+| **PharmGKB** | Full clinical-annotations TSV if available, else committed seed panel | Germline PGx (CYP2C19/clopidogrel, DPYD/5-FU…); levels crosswalked: 1A→A, 1B→B, 2A/2B→C, 3→D, 4→E; CPIC letters A–D map 1:1 |
 
 To load the full OncoKB dataset, drop the GENIE annotation file at the repo root
 (`genie_mskcc_samples_with_2017_oncokb_annotation.txt`) or point
-`PHARMAGEN_ONCOKB_FILE` at it. Without it, a curated 27-row seed panel of
-standard-of-care Level A/B pairings ships in-repo (`backend/data/seed/oncokb_seed.csv`)
-so the hybrid pipeline is demonstrable offline. Seed rows never overwrite
-existing CIViC evidence for the same key.
+`PHARMAGEN_ONCOKB_FILE` at it. For full PharmGKB data, point
+`PHARMAGEN_PHARMGKB_FILE` at a clinical-annotations TSV (Gene/Variant/Drug(s)/Level columns).
+Without them, curated seed panels ship in-repo (`backend/data/seed/oncokb_seed.csv`,
+`backend/data/seed/pharmgkb_seed.csv`) so the hybrid pipeline is demonstrable offline.
+Seed rows never overwrite existing evidence for the same key (`INSERT OR IGNORE`),
+and every tier from every source is normalized to one `Level A–E` scale before insert.
 
 ## Project Structure
 
@@ -126,3 +129,4 @@ cp .env.example .env
 | `GROQ_MODEL` | Model identifier | `llama-3.3-70b-versatile` |
 | `PHARMAGEN_API_URL` | Frontend API override | auto-detect |
 | `PHARMAGEN_ONCOKB_FILE` | Full OncoKB GENIE TSV path (optional) | repo-root auto-detect |
+| `PHARMAGEN_PHARMGKB_FILE` | PharmGKB clinical-annotations TSV path (optional) | seed panel |
