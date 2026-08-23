@@ -55,14 +55,6 @@ export interface HealthResponse {
   evidence_records: number;
 }
 
-export interface AiReviewResult {
-  provider: string;
-  summary: string;
-  key_points: string[];
-  safety_flags: string[];
-  disclaimer: string;
-}
-
 /** Flat evidence row, mirroring the Streamlit matrix columns. */
 export interface MatrixRow {
   gene: string;

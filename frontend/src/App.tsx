@@ -3,7 +3,6 @@ import Hero from "./components/Hero";
 import Sidebar from "./components/Sidebar";
 import Navbar from "./components/Navbar";
 import KnowledgeBase from "./components/KnowledgeBase";
-import AiReview from "./components/AiReview";
 import Downloads from "./components/Downloads";
 import GraphView from "./components/GraphView";
 import {
@@ -225,13 +224,6 @@ export default function App() {
                       </label>
                       {graphMatch && (
                         <GraphView
-                          gene={biomarker.split(" · ")[0]}
-                          mutation={biomarker.split(" · ")[1]}
-                          match={graphMatch}
-                        />
-                      )}
-                      {graphMatch && (
-                        <AiReview
                           gene={biomarker.split(" · ")[0]}
                           mutation={biomarker.split(" · ")[1]}
                           match={graphMatch}

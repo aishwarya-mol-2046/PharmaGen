@@ -22,12 +22,8 @@ main.py
 │   └── returns annotated_results
 ├── /api/v1/report/pdf
 │   └── PDFReportService.create_clinical_pdf(rows, meta)  # exact/contextual sections, paginated
-├── /api/v1/report/html
-│   └── report_generator.generate_html_report()
-└── /api/v1/ai-review
-    └── review_evidence()
-        ├── _llm_review() [optional, degrades gracefully]
-        └── _local_review() [fallback, always available]
+└── /api/v1/report/html
+    └── report_generator.generate_html_report()
 
 vcf_parser.py
 ├── parse_vcf_stream_detailed(file_bytes) → (variants, validation)
@@ -48,11 +44,6 @@ graph_engine.py
 report_generator.py
 └── generate_html_report(filename, analysis, rows) → html_string
 
-ai_layer.py
-├── review_evidence(evidence, context) → result [public entry]
-├── _llm_review(evidence, context) → result | None [optional]
-└── _local_review(evidence, context) → result [deterministic fallback]
-
 bootstrap.py
 └── init_real_civic_db()
     ├── Fetches CIViC nightly TSV
@@ -69,10 +60,10 @@ VCF Upload → parse_vcf_stream_detailed() → variants[]
                                     ↓
                          annotated_results[] → JSON response
                                     ↓
-                    ┌───────────────┼───────────────┐
-                    ↓               ↓               ↓
-              Frontend      generate_interactive_html()   review_evidence()
-              Matrix        (PyVis graph)                 (AI summary)
+              ┌─────────────────────┼─────────────────────┐
+              ↓                     ↓                     ↓
+        Frontend            generate_interactive_html()   PDFReportService /
+        Matrix              (PyVis graph)                 generate_html_report()
 ```
 
 ## Dual-Agent Workflows
@@ -116,7 +107,6 @@ For atomic tasks under 150 lines:
 
 ### Test Plan
 - [ ] test_clinical_workflow.py: [new case]
-- [ ] test_ai_layer.py: [new case]
 
 ### Rollback
 - [how to revert if issues arise]
@@ -161,17 +151,6 @@ For atomic tasks under 150 lines:
 }
 ```
 
-### AI Review Result Dict
-```python
-{
-    "provider": str,           # "local-review" | "groq-llm"
-    "summary": str,
-    "key_points": list[str],
-    "safety_flags": list[str],
-    "disclaimer": str          # always from DISCLAIMER constant
-}
-```
-
 ## Common Patterns
 
 ### Adding a New Match Type
@@ -200,14 +179,6 @@ def test_vcf_quality_report(self):
     variants, report = VariantAnnotationEngine.parse_vcf_stream_detailed(content)
     self.assertTrue(report["valid_vcf_headers"])
     self.assertEqual(report["parsed_rows"], expected_count)
-```
-
-### AI Layer Test
-```python
-def test_local_review_safety_flags(self):
-    result = _local_review(evidence, "reduced kidney function")
-    self.assertTrue(any("renal" in f.lower() for f in result["safety_flags"]))
-    self.assertIn("not a diagnosis", result["disclaimer"])
 ```
 
 ### Clinical Workflow Test

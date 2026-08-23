@@ -8,7 +8,6 @@ from fastapi import FastAPI, File, HTTPException, UploadFile
 from fastapi.middleware.cors import CORSMiddleware
 from fastapi.responses import Response
 
-from app.services.ai_layer import review_evidence
 from app.services.pdf_generator import PDFReportService
 from app.services.report_generator import generate_html_report
 from app.services.vcf_parser import DB_PATH, VariantAnnotationEngine
@@ -117,20 +116,6 @@ async def analyze_patient_vcf(file: UploadFile = File(...)):
         "input_validation": validation,
         "annotated_results": annotated,
     }
-
-
-@app.post("/api/v1/ai-review")
-async def ai_review(payload: dict):
-    evidence = payload.get("evidence") or {}
-    context = str(payload.get("patient_context") or "").strip()
-    if evidence.get("match_type") != "exact":
-        raise HTTPException(
-            status_code=400, detail="AI review requires an exact clinical evidence match."
-        )
-    required = ("gene", "mutation", "disease", "therapy", "evidence_tier")
-    if any(not evidence.get(field) for field in required):
-        raise HTTPException(status_code=400, detail="Evidence is missing required fields.")
-    return review_evidence(evidence, context)
 
 
 @app.get("/api/v1/knowledge-base")

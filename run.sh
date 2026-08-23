@@ -46,8 +46,7 @@ BACKEND_PID=""
 FRONTEND_PID=""
 
 # Load environment configuration (.env) into the process environment so the
-# backend inherits AI provider settings (GROQ_API_KEY, PHARMAGEN_LLM_*, etc.).
-# This makes the AI-assisted clinical review reliable regardless of launch cwd.
+# backend inherits optional settings (e.g. PHARMAGEN_ONCOKB_FILE).
 if [[ -f "$PROJECT_DIR/.env" ]]; then
     echo "Loading environment from .env"
     while IFS='=' read -r key value; do

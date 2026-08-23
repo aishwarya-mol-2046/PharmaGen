@@ -26,7 +26,7 @@
 
 = Overview
 
-PharmaGen ingests VCF (Variant Call Format) genomic files, extracts gene and mutation calls, matches them against a local SQLite clinical knowledge base built from CIViC and OncoKB evidence, and presents the results as an actionable treatment matrix, an interactive knowledge graph, downloadable reports, and optional AI-assisted review.
+PharmaGen ingests VCF (Variant Call Format) genomic files, extracts gene and mutation calls, matches them against a local SQLite clinical knowledge base built from CIViC and OncoKB evidence, and presents the results as an actionable treatment matrix, an interactive knowledge graph, and downloadable reports.
 
 Core flow:
 
@@ -73,14 +73,6 @@ Processing steps:
 - *Synthetic-data detection*: scans the first 8192 bytes for the markers `##synthetic_data=true` or `SYNTHETIC=1` and returns a boolean flag used by the frontend to label demo data.
 
 Response JSON keys: `status`, `variants_count`, `unique_genes`, `exact_matches`, `contextual_matches`, `no_matches`, `synthetic_data`, `input_validation`, `annotated_results` (each item is `{variant_info, clinical_matches}`) — all in `backend/app/main.py`.
-
-== Endpoint: POST `/api/v1/ai-review`
-
-AI review of a single evidence row.
-
-- Rejects with *400* unless the payload's `evidence.match_type == "exact"` — contextual-only evidence may never be sent to the LLM layer (policy enforcement at the API boundary).
-- Rejects with *400* if any required evidence field (`gene`, `mutation`, `disease`, `therapy`, `evidence_tier`) is missing or empty.
-- Delegates to `review_evidence(evidence, patient_context)` — `backend/app/main.py`.
 
 = Core services
 
@@ -190,37 +182,6 @@ File: `backend/app/services/pdf_generator.py` — class `PDFReportService`.
 - Evidence table limited to the first 15 dataframe rows with columns Gene, Mutation, Disease (truncated to 25 chars), Targeted Drug (truncated to 30 chars), Evidence Level.
 - Styled header row (dark background, white bold text) and light grid lines; returns the PDF bytes from the `BytesIO` buffer — `backend/app/services/pdf_generator.py`.
 
-== AI review layer
-
-File: `backend/app/services/ai_layer.py`. Loads `.env` at import via `python-dotenv`.
-
-=== Mandatory disclaimer
-
-Constant `DISCLAIMER`: every result — local or LLM — carries the same disclaimer stating this is AI review support, not a diagnosis or treatment recommendation — `ai_layer.py`.
-
-=== Deterministic fallback: `_local_review(evidence, context)`
-
-Rule-based reviewer that always succeeds:
-
-- Context keyword flags: mentions of kidney/renal add a renal-function review flag; liver/hepatic add a hepatic flag; prior therapy failure or progression adds a sequencing/resistance review flag.
-- Empty context produces an explicit "cannot assess safety without context" flag; if no rule triggered, a neutral informational flag is emitted so `safety_flags` is never empty.
-- Summary and key points are grounded strictly in the supplied DB record (gene, mutation, tier, disease, therapy); provider is reported as `local-review` — `ai_layer.py`.
-
-=== Optional LLM path: `_llm_review(evidence, context)` → result | None
-
-Provider abstraction over OpenAI-compatible chat-completions APIs:
-
-- Provider selection via `PHARMAGEN_LLM_PROVIDER` (`groq` default): Groq path uses `GROQ_API_URL`, `GROQ_API_KEY`, `GROQ_MODEL`; any other value uses the generic `PHARMAGEN_LLM_API_URL`, `PHARMAGEN_LLM_API_KEY`, `PHARMAGEN_LLM_MODEL` variables (default model `gpt-4o-mini`).
-- Returns `None` immediately when endpoint or API key is unset — silent degradation instead of errors.
-- System prompt constrains the model to evidence summarization only: no diagnosis, prescription, approval claims, or safety claims; demands JSON-only output with `summary`, `key_points`, `safety_flags`, `disclaimer`.
-- Sends user message as JSON containing the evidence dict and non-identifying patient context; temperature 0.1; 30 s timeout.
-- Strips markdown code fences from the reply, parses JSON, forces `provider` to `"<provider>-llm"` and enforces the canonical disclaimer.
-- Any network/shape/parsing failure (`requests.RequestException`, `KeyError`, `IndexError`, `TypeError`, `json.JSONDecodeError`) returns `None` so the caller falls back — `ai_layer.py`.
-
-=== Orchestrator: `review_evidence(evidence, context)`
-
-Single public entry point: `return _llm_review(...) or _local_review(...)` — the LLM is strictly optional and every failure path lands in the deterministic fallback (banned pattern #2 compliance) — `ai_layer.py`.
-
 = Knowledge base layer
 
 File: `backend/app/db/bootstrap.py` — function `init_real_civic_db()` plus OncoKB loader `_load_oncokb(cursor)`; runnable as `python -m backend.app.db.bootstrap`.
@@ -293,10 +254,6 @@ Tab 2 — Interactive Knowledge Graph:
 - "Why this result appeared" explanation line tying the selection back to the exact match, tier, and source.
 - *Focused PyVis graph* built in memory: hierarchical left-to-right layout, physics disabled, hover and navigation buttons enabled, themed palette (`#E76F51` gene ellipse → `#D29A31` mutation diamond → `#62B7B0` disease box → `#8CE0C3` drug star) chained Gene→Mutation→Disease→Drug; rendered container-safely via `components.html(net.generate_html(notebook=False))` with no disk writes — `frontend/app.py`.
 
-== AI-assisted review UI
-
-Expander inside the graph tab: textarea for *non-identifying* clinical context (privacy captions warn against entering names/identifiers), button posts the evidence plus context to `/api/v1/ai-report`'s sibling endpoint `/api/v1/ai-review` (35 s timeout); success renders provider badge, summary, key-point list, each safety flag as a warning, and the disclaimer; results cached in session state — `frontend/app.py`.
-
 == Landing state
 
 When no file is active: "Awaiting genomic input" strip and a three-column introduction (01 Variant scan / 02 Evidence match / 03 Explainable graph) — `frontend/app.py`.
@@ -321,7 +278,6 @@ Directory: `tests/` — unittest-style classes executed with pytest (`make test`
 - *Auto-provisioning fixture*: `conftest.py` defines a session-scoped autouse `ensure_database` fixture creating a minimal four-row KB (BRAF, EGFR, KRAS, ERBB2) when `clinical_kb.db` is absent, so the suite passes without bootstrapping; also provides a `fixtures_dir` fixture — `tests/conftest.py`.
 - *Clinical workflow tests* `ClinicalWorkflowTests`: exact match (EGFR L858R); prefix stripping (`p.L858R` still exact); gene-context never classified exact; unknown gene returns `none` with the "No Direct Match" sentinel; VCF quality report validated end-to-end against the committed fixture (2 variants, valid headers, zero skips, 100% coverage) — `tests/test_clinical_workflow.py`, fixture `tests/unmatched_test.vcf` (BRCA1 V1838E, TP53 R273H).
 - *Cohort parsing tests* `CohortParsingTests`: cross-patient recurrence kept (two SAMPLE-tagged identical hotspots → 0 duplicates, 2 patients observed); same-patient repeat counted as the sole true duplicate; `unique_variant_combinations` counting — `tests/test_cohort_parsing.py`.
-- *AI layer tests* `AiLayerTests`: local summary is grounded (contains "EGFR L858R"), safety-flag *content* verified (renal flag on kidney-function context), disclaimer contains "not a diagnosis" — `tests/test_ai_layer.py`.
 
 = Developer tooling & infrastructure
 
@@ -339,7 +295,7 @@ File: `Makefile`.
 == Container support
 
 - *Dockerfile*: `python:3.11-slim` base; installs curl + gcc; installs production deps; copies code; performs a best-effort KB bootstrap at build time (failure tolerated, retried at runtime); exposes 8000/8501; HEALTHCHECK curls `/health` (30 s interval, 60 s start period); entrypoint `./run.sh` running both services in one container — `Dockerfile`.
-- *docker-compose.yml*: two services from the same image — `backend` (uvicorn bound 0.0.0.0:8000, `./backend/data` volume mount persisting the KB, Groq env passthrough, healthcheck) and `frontend` (Streamlit 8501 with `PHARMAGEN_API_URL=http://backend:8000`, gated on backend health via `depends_on: condition: service_healthy`) — `docker-compose.yml`.
+- *docker-compose.yml*: two services from the same image — `backend` (uvicorn bound 0.0.0.0:8000, `./backend/data` volume mount persisting the KB, healthcheck) and `frontend` (Streamlit 8501 with `PHARMAGEN_API_URL=http://backend:8000`, gated on backend health via `depends_on: condition: service_healthy`) — `docker-compose.yml`.
 
 == Quality gates
 
@@ -365,17 +321,12 @@ File: `Makefile`.
   align: (left, left, left),
   inset: 5pt,
   [*Variable*], [*Purpose*], [*Default*],
-  [`PHARMAGEN_LLM_PROVIDER`], [Selects Groq vs any generic OpenAI-compatible provider], [`groq`],
-  [`GROQ_API_KEY`], [Groq key; absence silently degrades AI review to local rules], [required for LLM],
-  [`GROQ_MODEL`], [Chat model identifier], [`llama-3.3-70b-versatile`],
-  [`GROQ_API_URL`], [Groq chat-completions endpoint], [official Groq URL],
-  [`PHARMAGEN_LLM_API_URL/_KEY/_MODEL`], [Generic provider config when provider ≠ groq], [model `gpt-4o-mini`],
   [`PHARMAGEN_API_URL`], [Frontend API base override], [auto-detect `http://127.0.0.1:8000`],
   [`PHARMAGEN_ONCOKB_FILE`], [Path to full OncoKB GENIE TSV], [auto-detect repo root / `tests/`],
 )
 
 = Cross-cutting policies
 
-- *Match policy*: `exact` (gene + mutation) is the only actionable class shown as treatment recommendations; `gene_context` is displayed separately with warnings; `none` receives no recommendation. Enforced in the matcher, the API (ai-review gate), the reports, and the UI.
-- *Safety posture*: fixed disclaimer on every AI artifact; LLM prompt constrained against diagnosis/prescription; privacy rules forbid patient identifiers in logs, prompts, and session state; synthetic datasets are labeled end-to-end (generator headers → API detection → UI banner).
-- *Graceful degradation chain*: CIViC offline → 4-record panel; OncoKB GENIE absent → seed CSV; LLM unavailable → deterministic local review; DB missing → tests self-provision.
+- *Match policy*: `exact` (gene + mutation) is the only actionable class shown as treatment recommendations; `gene_context` is displayed separately with warnings; `none` receives no recommendation. Enforced in the matcher, the reports, and the UI.
+- *Safety posture*: privacy rules forbid patient identifiers in logs and session state; synthetic datasets are labeled end-to-end (generator headers → API detection → UI banner).
+- *Graceful degradation chain*: CIViC offline → 4-record panel; OncoKB GENIE absent → seed CSV; DB missing → tests self-provision.

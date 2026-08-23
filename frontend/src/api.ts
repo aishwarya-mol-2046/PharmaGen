@@ -1,4 +1,4 @@
-import type { AiReviewResult, AnalysisResponse, HealthResponse } from "./types";
+import type { AnalysisResponse, HealthResponse } from "./types";
 
 /**
  * API base candidates:
@@ -91,19 +91,6 @@ export async function requestHtmlReport(body: unknown): Promise<string> {
   });
   if (!res.ok) throw new Error(`HTML report failed (${res.status}): ${await res.text()}`);
   return res.text();
-}
-
-export async function requestAiReview(payload: {
-  patient_context: string;
-  evidence: Record<string, string>;
-}): Promise<AiReviewResult> {
-  const res = await fetch(apiUrl("/api/v1/ai-review"), {
-    method: "POST",
-    headers: { "Content-Type": "application/json" },
-    body: JSON.stringify(payload),
-  });
-  if (!res.ok) throw new Error(await res.text());
-  return (await res.json()) as AiReviewResult;
 }
 
 export interface KnowledgeBaseParams {

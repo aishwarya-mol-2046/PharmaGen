@@ -22,6 +22,12 @@ Once started:
 
 Press `Ctrl+C` to stop both services.
 
+> **Optional setup:** copy `.env.example` to `.env` to override defaults (see
+> [Environment Variables](#environment-variables)). The launcher loads `.env`
+> into the backend process automatically — `make run` (`run.sh`),
+> `make backend`, and the Windows `run.ps1` all read it. No manual `export`
+> is required.
+
 ## Development
 
 ### Available Commands
@@ -87,7 +93,7 @@ pharmagen/
 │       ├── vcf_parser.py    # VCF parsing + evidence matching
 │       ├── graph_engine.py  # PyVis knowledge graph
 │       ├── report_generator.py  # HTML report builder
-│       └── ai_layer.py      # AI review (local + LLM fallback)
+│       └── pdf_generator.py # PDF report builder (ReportLab)
 ├── frontend/                # React + TypeScript SPA (Vite)
 ├── tests/                   # Test suites
 ├── AGENTS.md                # Project rules & constraints
@@ -116,13 +122,13 @@ Copy `.env.example` to `.env` and configure:
 
 ```bash
 cp .env.example .env
-# Add your GROQ_API_KEY for LLM features
 ```
+
+The file is loaded automatically by `run.sh`, `run.ps1`, and the `make backend`
+target (keys are exported into the backend process environment at launch), so
+you do not need to `export` them in your shell.
 
 | Variable | Purpose | Default |
 |---|---|---|
-| `PHARMAGEN_LLM_PROVIDER` | LLM backend selector | `groq` |
-| `GROQ_API_KEY` | Groq API key | (required for LLM) |
-| `GROQ_MODEL` | Model identifier | `llama-3.3-70b-versatile` |
 | `PHARMAGEN_API_URL` | Frontend API override | auto-detect |
 | `PHARMAGEN_ONCOKB_FILE` | Full OncoKB GENIE TSV path (optional) | repo-root auto-detect |

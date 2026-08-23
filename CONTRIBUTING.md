@@ -65,7 +65,6 @@ make test      # pytest with coverage
 Every change must have corresponding tests:
 
 - New match type → `tests/test_clinical_workflow.py` case
-- AI layer changes → `tests/test_ai_layer.py` with `safety_flags` verification
 - VCF parser changes → validate full `validation` dict structure
 
 ```bash

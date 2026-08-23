@@ -8,10 +8,6 @@ services:
       - "8000:8000"
     volumes:
       - ./backend/data:/app/backend/data
-    environment:
-      - PHARMAGEN_LLM_PROVIDER=${PHARMAGEN_LLM_PROVIDER:-groq}
-      - GROQ_API_KEY=${GROQ_API_KEY:-}
-      - GROQ_MODEL=${GROQ_MODEL:-llama-3.3-70b-versatile}
     healthcheck:
       test: ["CMD", "curl", "-f", "http://localhost:8000/health"]
       interval: 30s

@@ -20,6 +20,28 @@ if (-not $SkipInstall) {
     & $Pip install -r (Join-Path $ProjectDir "requirements.txt") -q
 }
 
+# Load environment configuration (.env) into the process environment so the
+# backend inherits optional settings (e.g. PHARMAGEN_ONCOKB_FILE).
+# Mirrors the .env loader in run.sh / the `make backend` target.
+$EnvFile = Join-Path $ProjectDir ".env"
+if (Test-Path $EnvFile) {
+    Write-Host "Loading environment from .env"
+    Get-Content $EnvFile | ForEach-Object {
+        $line = $_.Trim()
+        if ([string]::IsNullOrWhiteSpace($line) -or $line.StartsWith("#")) { return }
+        $idx = $line.IndexOf("=")
+        if ($idx -le 0) { return }
+        $key = $line.Substring(0, $idx).Trim()
+        $val = $line.Substring($idx + 1).Trim()
+        if ($val.Length -ge 2 -and $val.StartsWith('"') -and $val.EndsWith('"')) {
+            $val = $val.Substring(1, $val.Length - 2)
+        }
+        if (-not [string]::IsNullOrWhiteSpace($key)) {
+            Set-Item -Path "Env:$key" -Value $val
+        }
+    }
+}
+
 $BackendArgs = @(
     "-m", "uvicorn", "app.main:app",
     "--app-dir", "`"$(Join-Path $ProjectDir "backend")`"",
